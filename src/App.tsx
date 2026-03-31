@@ -26,6 +26,24 @@ function App() {
   }, [showShortcuts, showSettings]);
 
   useEffect(() => {
+    const tryFocus = () => {
+      const el = document.querySelector('.ProseMirror') as HTMLElement | null;
+      if (el) {
+        el.focus();
+        return true;
+      }
+      return false;
+    };
+    if (!tryFocus()) {
+      const observer = new MutationObserver(() => {
+        if (tryFocus()) observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      return () => observer.disconnect();
+    }
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey && e.key === '/') {
         e.preventDefault();
