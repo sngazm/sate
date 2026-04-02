@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import Database from '@tauri-apps/plugin-sql';
 import { saveSnapshot } from '../lib/snapshot';
 import type { FileMetadata } from '../lib/fileUtils';
@@ -49,18 +50,15 @@ export function useSnapshot({ db, metadataRef, contentRef, content }: UseSnapsho
     };
   }, [content, db, doSnapshot]);
 
-  // Snapshot on unmount (file switch / app close)
+  // Snapshot on app close via Tauri close event
   useEffect(() => {
-    const currentMetadataRef = metadataRef;
-    const currentContentRef = contentRef;
-    const currentDb = db;
+    const window = getCurrentWebviewWindow();
+    const unlisten = window.onCloseRequested(async () => {
+      await doSnapshot();
+    });
+
     return () => {
-      const meta = currentMetadataRef.current;
-      const body = currentContentRef.current;
-      if (currentDb && meta && body) {
-        const fullContent = buildFrontMatter(meta) + body;
-        saveSnapshot(currentDb, meta.uuid, fullContent).catch(() => {});
-      }
+      unlisten.then((fn) => fn());
     };
-  }, [db, metadataRef, contentRef]);
+  }, [doSnapshot]);
 }

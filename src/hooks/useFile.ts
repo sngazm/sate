@@ -136,7 +136,7 @@ export function useFile(dirPath: string) {
       if (newContent) {
         saveTimerRef.current = setTimeout(() => {
           saveFile();
-        }, 1500);
+        }, 3000);
       }
     },
     [saveFile]
