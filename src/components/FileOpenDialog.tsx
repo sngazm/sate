@@ -1,42 +1,71 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { readDir } from '@tauri-apps/plugin-fs';
+import Database from '@tauri-apps/plugin-sql';
+import { listFiles, searchFiles } from '../lib/search';
+import type { FileEntry } from '../lib/search';
 import './FileOpenDialog.css';
 
 interface FileOpenDialogProps {
   visible: boolean;
   dirPath: string;
+  db: Database | null;
+  dbReady: boolean;
   onOpen: (fileName: string) => void;
   onClose: () => void;
 }
 
-export default function FileOpenDialog({ visible, dirPath, onOpen, onClose }: FileOpenDialogProps) {
-  const [files, setFiles] = useState<string[]>([]);
+export default function FileOpenDialog({ visible, dirPath, db, dbReady, onOpen, onClose }: FileOpenDialogProps) {
+  const [items, setItems] = useState<{ name: string; firstLine?: string }[]>([]);
+  const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!visible) return;
+
+    let cancelled = false;
     (async () => {
       try {
-        const entries = await readDir(dirPath);
-        const mdFiles = entries
-          .filter((e) => e.name?.endsWith('.md'))
-          .map((e) => e.name!)
-          .sort()
-          .reverse();
-        setFiles(mdFiles);
-        setSelectedIndex(0);
+        let result: { name: string; firstLine?: string }[];
+        if (db && dbReady) {
+          let entries: FileEntry[];
+          if (query.trim()) {
+            entries = await searchFiles(db, query.trim());
+          } else {
+            entries = await listFiles(db);
+          }
+          result = entries.map((e) => ({ name: e.current_path, firstLine: e.first_line }));
+        } else {
+          const entries = await readDir(dirPath);
+          const mdFiles = entries
+            .filter((e) => e.name?.endsWith('.md'))
+            .map((e) => e.name!)
+            .sort()
+            .reverse();
+          result = mdFiles.map((name) => ({ name }));
+        }
+        if (!cancelled) {
+          setItems(result);
+          setSelectedIndex(0);
+        }
       } catch {
-        setFiles([]);
-        setSelectedIndex(0);
+        if (!cancelled) {
+          setItems([]);
+          setSelectedIndex(0);
+        }
       }
     })();
-  }, [visible, dirPath]);
+    return () => { cancelled = true; };
+  }, [visible, dirPath, db, dbReady, query]);
 
   useEffect(() => {
     if (visible) {
-      panelRef.current?.focus();
+      // Focus the input if available, otherwise the panel
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     }
   }, [visible]);
 
@@ -44,32 +73,37 @@ export default function FileOpenDialog({ visible, dirPath, onOpen, onClose }: Fi
     selectedItemRef.current?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
+  const handleClose = useCallback(() => {
+    setQuery('');
+    onClose();
+  }, [onClose]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, files.length - 1));
+        setSelectedIndex((i) => Math.min(i + 1, items.length - 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (files[selectedIndex]) {
-          onOpen(files[selectedIndex]);
-          onClose();
+        if (items[selectedIndex]) {
+          onOpen(items[selectedIndex].name);
+          handleClose();
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        handleClose();
       }
     },
-    [files, selectedIndex, onOpen, onClose]
+    [items, selectedIndex, onOpen, handleClose]
   );
 
   if (!visible) return null;
 
   return (
-    <div className="fileopen-overlay" onClick={onClose}>
+    <div className="fileopen-overlay" onClick={handleClose}>
       <div
         ref={panelRef}
         className="fileopen-panel"
@@ -77,20 +111,32 @@ export default function FileOpenDialog({ visible, dirPath, onOpen, onClose }: Fi
         onKeyDown={handleKeyDown}
         tabIndex={-1}
       >
-        <div className="fileopen-title">ファイルを開く</div>
-        {files.length === 0 ? (
-          <div className="fileopen-empty">ファイルがありません</div>
+        <input
+          ref={inputRef}
+          className="fileopen-search"
+          type="text"
+          placeholder="検索..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {items.length === 0 ? (
+          <div className="fileopen-empty">
+            {query ? '見つかりません' : 'ファイルがありません'}
+          </div>
         ) : (
           <div className="fileopen-list">
-            {files.map((name, i) => (
+            {items.map((item, i) => (
               <div
-                key={name}
+                key={item.name}
                 ref={i === selectedIndex ? selectedItemRef : null}
                 className={`fileopen-item${i === selectedIndex ? ' fileopen-item--selected' : ''}`}
-                onClick={() => { onOpen(name); onClose(); }}
+                onClick={() => { onOpen(item.name); handleClose(); }}
                 onMouseEnter={() => setSelectedIndex(i)}
               >
-                {name.replace(/\.md$/, '')}
+                <div className="fileopen-item-name">{item.name.replace(/\.md$/, '')}</div>
+                {item.firstLine && (
+                  <div className="fileopen-item-preview">{item.firstLine}</div>
+                )}
               </div>
             ))}
           </div>

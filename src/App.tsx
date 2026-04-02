@@ -6,11 +6,15 @@ import SettingsDialog from './components/SettingsDialog';
 import FileOpenDialog from './components/FileOpenDialog';
 import { useFile } from './hooks/useFile';
 import { useSettings } from './hooks/useSettings';
+import { useDb } from './hooks/useDb';
+import { useSnapshot } from './hooks/useSnapshot';
 import './App.css';
 
 function App() {
   const { settings, loaded, updateSettings } = useSettings();
-  const { fileName, content, updateContent, saveFile, openFile } = useFile(settings?.baseDir ?? '');
+  const { fileName, content, updateContent, saveFile, openFile, metadataRef, contentRef } = useFile(settings?.baseDir ?? '');
+  const { db, ready: dbReady } = useDb(settings?.baseDir ?? '');
+  useSnapshot({ db, metadataRef, contentRef, content });
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFileOpen, setShowFileOpen] = useState(false);
@@ -82,6 +86,8 @@ function App() {
       <FileOpenDialog
         visible={showFileOpen}
         dirPath={settings.baseDir}
+        db={db}
+        dbReady={dbReady}
         onOpen={openFile}
         onClose={() => setShowFileOpen(false)}
       />

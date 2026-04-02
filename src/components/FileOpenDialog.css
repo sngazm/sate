@@ -32,6 +32,27 @@
   flex-shrink: 0;
 }
 
+.fileopen-search {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 14px;
+  color: var(--text);
+  background: #1e1e1c;
+  border: 1px solid #3a3a38;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 16px 12px;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.fileopen-search:focus {
+  border-color: #555;
+}
+
+.fileopen-search::placeholder {
+  color: var(--text-muted);
+}
+
 .fileopen-empty {
   font-family: 'YuGothic', 'Yu Gothic', sans-serif;
   font-size: 14px;
@@ -51,6 +72,22 @@
   color: var(--text);
   padding: 7px 24px;
   cursor: pointer;
+}
+
+.fileopen-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fileopen-item-preview {
+  font-family: 'YuGothic', 'Yu Gothic', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fileopen-item--selected {

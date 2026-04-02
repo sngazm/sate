@@ -3,15 +3,10 @@ import {
   writeTextFile,
   readTextFile,
   readDir,
-  mkdir,
-  exists,
 } from '@tauri-apps/plugin-fs';
-
-interface FileMetadata {
-  uuid: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { FileMetadata } from '../lib/fileUtils';
+import { ensureDir, buildFrontMatter, parseFrontMatter, getFirstLine } from '../lib/fileUtils';
+import { getDb, isFts5Supported } from '../lib/db';
 
 function generateDatePrefix(): string {
   const now = new Date();
@@ -19,13 +14,6 @@ function generateDatePrefix(): string {
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
-}
-
-async function ensureDir(dirPath: string): Promise<void> {
-  const dirExists = await exists(dirPath);
-  if (!dirExists) {
-    await mkdir(dirPath, { recursive: true });
-  }
 }
 
 async function getNextFileName(dirPath: string): Promise<string> {
@@ -54,40 +42,6 @@ async function getNextFileName(dirPath: string): Promise<string> {
   } catch {
     return `${datePrefix}-001.md`;
   }
-}
-
-function buildFrontMatter(meta: FileMetadata): string {
-  return `---\nuuid: ${meta.uuid}\ncreated: ${meta.createdAt}\nupdated: ${meta.updatedAt}\n---\n\n`;
-}
-
-function parseFrontMatter(fileContent: string): { metadata: FileMetadata | null; body: string } {
-  if (!fileContent.startsWith('---\n')) {
-    return { metadata: null, body: fileContent };
-  }
-  const end = fileContent.indexOf('\n---\n', 4);
-  if (end === -1) {
-    return { metadata: null, body: fileContent };
-  }
-  const fm = fileContent.slice(4, end);
-  const rest = fileContent.slice(end + 5); // skip '\n---\n'
-  const body = rest.startsWith('\n') ? rest.slice(1) : rest;
-
-  const uuidMatch = fm.match(/^uuid:\s*(.+)$/m);
-  const createdMatch = fm.match(/^created:\s*(.+)$/m);
-  const updatedMatch = fm.match(/^updated:\s*(.+)$/m);
-
-  if (!uuidMatch || !createdMatch || !updatedMatch) {
-    return { metadata: null, body: fileContent };
-  }
-
-  return {
-    metadata: {
-      uuid: uuidMatch[1].trim(),
-      createdAt: createdMatch[1].trim(),
-      updatedAt: updatedMatch[1].trim(),
-    },
-    body,
-  };
 }
 
 export function useFile(dirPath: string) {
@@ -135,6 +89,34 @@ export function useFile(dirPath: string) {
       const fileContent = buildFrontMatter(metadataRef.current) + currentContent;
       const filePath = `${dirPath}/${fileName}`;
       await writeTextFile(filePath, fileContent);
+
+      // Sync to DB (fire-and-forget, don't block save)
+      const meta = metadataRef.current;
+      const db = getDb();
+      if (db && meta) {
+        const firstLine = getFirstLine(currentContent);
+        const ts = new Date(meta.updatedAt).getTime();
+        const createdTs = new Date(meta.createdAt).getTime();
+        try {
+          await db.execute(
+            `INSERT INTO files (file_id, created_at, updated_at, first_line, current_path)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT(file_id) DO UPDATE SET
+               updated_at = $3, first_line = $4, current_path = $5`,
+            [meta.uuid, createdTs, ts, firstLine, fileName]
+          );
+
+          // Update search index
+          if (isFts5Supported()) {
+            await db.execute('DELETE FROM search_index WHERE file_id = $1', [meta.uuid]);
+            await db.execute('INSERT INTO search_index (file_id, content) VALUES ($1, $2)', [meta.uuid, currentContent]);
+          } else {
+            await db.execute('UPDATE files SET content_cache = $1 WHERE file_id = $2', [currentContent, meta.uuid]);
+          }
+        } catch (dbErr) {
+          console.error('DB sync failed:', dbErr);
+        }
+      }
     } catch (err) {
       console.error('Failed to save:', err);
     } finally {
@@ -196,5 +178,7 @@ export function useFile(dirPath: string) {
     openFile,
     saveFile,
     initFile,
+    metadataRef,
+    contentRef,
   };
 }
