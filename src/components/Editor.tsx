@@ -11,7 +11,7 @@ import { Decoration, DecorationSet } from '@milkdown/prose/view';
 import { splitBlock } from '@milkdown/prose/commands';
 
 interface EditorComponentProps {
-  onChange: (markdown: string) => void;
+  onChange?: (markdown: string) => void;
   initialContent?: string;
 }
 
@@ -71,7 +71,7 @@ function MilkdownEditor({ onChange, initialContent = '' }: EditorComponentProps)
         ctx.set(rootCtx, root);
         ctx.set(defaultValueCtx, initialContent);
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-          onChangeRef.current(markdown);
+          onChangeRef.current?.(markdown);
         });
       })
       .use(commonmark)

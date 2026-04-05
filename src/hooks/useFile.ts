@@ -57,6 +57,7 @@ export function useFile(dirPath: string) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [fileId, setFileId] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const metadataRef = useRef<FileMetadata | null>(null);
@@ -67,6 +68,7 @@ export function useFile(dirPath: string) {
     const name = await getNextFileName(dirPath);
     setFileName(name);
     setContent('');
+    setFileId(null);
     metadataRef.current = null;
   }, [dirPath]);
 
@@ -86,12 +88,14 @@ export function useFile(dirPath: string) {
 
       const now = new Date().toISOString();
       if (!metadataRef.current) {
+        const uuid = crypto.randomUUID();
         metadataRef.current = {
-          uuid: crypto.randomUUID(),
+          uuid,
           createdAt: now,
           updatedAt: now,
           title: null,
         };
+        setFileId(uuid);
       } else {
         metadataRef.current = { ...metadataRef.current, updatedAt: now };
       }
@@ -148,6 +152,7 @@ export function useFile(dirPath: string) {
         const { metadata, body } = parseFrontMatter(text);
         setFileName(name);
         setContent(body);
+        setFileId(metadata?.uuid ?? null);
         metadataRef.current = metadata;
       } catch (err) {
         console.error('Failed to open file:', err);
@@ -170,6 +175,7 @@ export function useFile(dirPath: string) {
 
   return {
     fileName,
+    fileId,
     content,
     isSaving,
     updateContent,

@@ -4,7 +4,9 @@ import WordCount from './components/WordCount';
 import ShortcutHelp from './components/ShortcutHelp';
 import SettingsDialog from './components/SettingsDialog';
 import FileOpenDialog from './components/FileOpenDialog';
+import RewindTimeline from './components/RewindTimeline';
 import { useFile } from './hooks/useFile';
+import { useRewind } from './hooks/useRewind';
 import { useSettings } from './hooks/useSettings';
 import { initDatabase } from './lib/db';
 import { reconcile } from './lib/reconcile';
@@ -12,16 +14,21 @@ import './App.css';
 
 function App() {
   const { settings, loaded, updateSettings } = useSettings();
-  const { fileName, content, updateContent, saveFile, openFile, initFile } = useFile(settings?.baseDir ?? '');
+  const { fileName, fileId, content, updateContent, saveFile, openFile, initFile } = useFile(settings?.baseDir ?? '');
+  const rewind = useRewind(fileId);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFileOpen, setShowFileOpen] = useState(false);
 
+  const displayContent = rewind.active && rewind.currentContent !== null
+    ? rewind.currentContent
+    : content;
+
   const charCount = useMemo(() => {
-    if (!content) return 0;
+    if (!displayContent) return 0;
     // Milkdownは段落間を \n\n で区切り、空段落に <br /> を入れる
     // 段落ごとに分割してカウントする
-    const paragraphs = content.split(/\n\n/);
+    const paragraphs = displayContent.split(/\n\n/);
     let count = 0;
     for (let i = 0; i < paragraphs.length; i++) {
       const text = paragraphs[i]
@@ -32,7 +39,7 @@ function App() {
       if (i < paragraphs.length - 1) count += 1;
     }
     return count;
-  }, [content]);
+  }, [displayContent]);
 
   const handleClick = useCallback(() => {
     if (showShortcuts || showSettings) return;
@@ -102,7 +109,11 @@ function App() {
     <div className="app" onClick={handleClick}>
       <div className="editor-container">
         <div className="editor-wrapper">
-          <EditorComponent key={fileName} initialContent={content} onChange={updateContent} />
+          <EditorComponent
+            key={rewind.active ? `${fileName}-rewind-${rewind.currentIndex}` : fileName}
+            initialContent={displayContent}
+            onChange={rewind.active ? undefined : updateContent}
+          />
         </div>
       </div>
       {fileName && <div className="file-name">{fileName.replace(/\.md$/, '')}</div>}
@@ -119,6 +130,11 @@ function App() {
         dirPath={settings.baseDir}
         onOpen={openFile}
         onClose={() => setShowFileOpen(false)}
+      />
+      <RewindTimeline
+        visible={rewind.active}
+        snapshots={rewind.snapshots}
+        currentIndex={rewind.currentIndex}
       />
     </div>
   );
