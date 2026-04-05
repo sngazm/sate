@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EditorComponent from './components/Editor';
 import WordCount from './components/WordCount';
 import ShortcutHelp from './components/ShortcutHelp';
@@ -23,6 +23,23 @@ function App() {
   const displayContent = rewind.active && rewind.currentContent !== null
     ? rewind.currentContent
     : content;
+
+  // Crossfade: track previous content to fade out while new content fades in
+  const [fadeContent, setFadeContent] = useState<string | null>(null);
+  const [fadeKey, setFadeKey] = useState(0);
+  const prevDisplayRef = useRef(displayContent);
+
+  useEffect(() => {
+    if (rewind.active && prevDisplayRef.current !== displayContent) {
+      // Capture old content for fade-out layer
+      setFadeContent(prevDisplayRef.current);
+      setFadeKey((k) => k + 1);
+      prevDisplayRef.current = displayContent;
+    } else if (!rewind.active) {
+      setFadeContent(null);
+      prevDisplayRef.current = displayContent;
+    }
+  }, [rewind.active, displayContent]);
 
   const charCount = useMemo(() => {
     if (!displayContent) return 0;
@@ -109,12 +126,26 @@ function App() {
     <div className={`app${rewind.active ? ' rewind-active' : ''}`} onClick={handleClick}>
       <div className="editor-container">
         <div className="editor-wrapper">
-          <EditorComponent
+          {/* Fade-out layer: previous snapshot content */}
+          {rewind.active && fadeContent !== null && (
+            <div key={`fade-${fadeKey}`} className="rewind-fade-out">
+              <EditorComponent
+                initialContent={fadeContent}
+                readOnly
+              />
+            </div>
+          )}
+          {/* Main editor layer */}
+          <div
             key={rewind.active ? `${fileName}-rewind-${rewind.currentIndex}` : fileName}
-            initialContent={displayContent}
-            onChange={rewind.active ? undefined : updateContent}
-            readOnly={rewind.active}
-          />
+            className={rewind.active ? 'rewind-fade-in' : undefined}
+          >
+            <EditorComponent
+              initialContent={displayContent}
+              onChange={rewind.active ? undefined : updateContent}
+              readOnly={rewind.active}
+            />
+          </div>
         </div>
       </div>
       {fileName && <div className="file-name">{fileName.replace(/\.md$/, '')}</div>}

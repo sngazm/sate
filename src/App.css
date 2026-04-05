@@ -159,18 +159,42 @@
   margin: 1.5em 0;
 }
 
-/* Rewind mode: keep text cursor for selection, dim editor slightly */
+/* Rewind mode */
 .app.rewind-active {
   cursor: default;
 }
 
 .app.rewind-active .editor-wrapper {
+  position: relative;
   opacity: 0.7;
   transition: opacity 0.2s ease;
 }
 
 .app.rewind-active .editor-wrapper .ProseMirror {
   cursor: text;
+}
+
+/* Crossfade: fade-out layer (previous snapshot) */
+.rewind-fade-out {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: rewind-crossfade-out 180ms ease-out forwards;
+}
+
+/* Crossfade: fade-in layer (new snapshot) */
+.rewind-fade-in {
+  animation: rewind-crossfade-in 180ms ease-out;
+}
+
+@keyframes rewind-crossfade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes rewind-crossfade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* File name */
