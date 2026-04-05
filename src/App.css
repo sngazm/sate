@@ -159,6 +159,20 @@
   margin: 1.5em 0;
 }
 
+/* Rewind mode: keep text cursor for selection, dim editor slightly */
+.app.rewind-active {
+  cursor: default;
+}
+
+.app.rewind-active .editor-wrapper {
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.app.rewind-active .editor-wrapper .ProseMirror {
+  cursor: text;
+}
+
 /* File name */
 .file-name {
   position: fixed;

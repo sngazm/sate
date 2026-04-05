@@ -80,7 +80,7 @@ export default function RewindTimeline({ visible, snapshots, currentIndex }: Pro
           ))}
         </div>
       </div>
-      <div className="rewind-hint">Cmd+スクロールで移動 · Escで戻る</div>
+      <div className="rewind-hint">Cmd+スクロールで移動 · テキスト選択+コピー可 · Escで戻る</div>
     </div>
   );
 }

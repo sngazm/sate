@@ -106,13 +106,14 @@ function App() {
   if (!loaded || !settings) return null;
 
   return (
-    <div className="app" onClick={handleClick}>
+    <div className={`app${rewind.active ? ' rewind-active' : ''}`} onClick={handleClick}>
       <div className="editor-container">
         <div className="editor-wrapper">
           <EditorComponent
             key={rewind.active ? `${fileName}-rewind-${rewind.currentIndex}` : fileName}
             initialContent={displayContent}
             onChange={rewind.active ? undefined : updateContent}
+            readOnly={rewind.active}
           />
         </div>
       </div>

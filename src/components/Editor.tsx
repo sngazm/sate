@@ -13,6 +13,7 @@ import { splitBlock } from '@milkdown/prose/commands';
 interface EditorComponentProps {
   onChange?: (markdown: string) => void;
   initialContent?: string;
+  readOnly?: boolean;
 }
 
 // Shift+Enter を通常のEnter（段落分割）と同じにする
@@ -61,9 +62,18 @@ const selectionHighlightPlugin = $prose(() => {
   });
 });
 
-function MilkdownEditor({ onChange, initialContent = '' }: EditorComponentProps) {
+function MilkdownEditor({ onChange, initialContent = '', readOnly = false }: EditorComponentProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  const readOnlyPlugin = $prose(() => {
+    return new Plugin({
+      key: new PluginKey('read-only'),
+      props: {
+        editable: () => !readOnly,
+      },
+    });
+  });
 
   useEditor((root) =>
     Editor.make()
@@ -80,6 +90,7 @@ function MilkdownEditor({ onChange, initialContent = '' }: EditorComponentProps)
       .use(shiftEnterAsSplitPlugin)
       .use(selectionHighlightPlugin)
       .use(clipboardTextSerializerPlugin)
+      .use(readOnlyPlugin)
       .config((ctx) => {
         ctx.set(codeBlockKeymap.key, {
           CreateCodeBlock: { shortcuts: '' },
@@ -91,11 +102,11 @@ function MilkdownEditor({ onChange, initialContent = '' }: EditorComponentProps)
   return <Milkdown />;
 }
 
-export default function EditorComponent({ onChange, initialContent }: EditorComponentProps) {
+export default function EditorComponent({ onChange, initialContent, readOnly }: EditorComponentProps) {
   return (
     <MilkdownProvider>
       <ProsemirrorAdapterProvider>
-        <MilkdownEditor onChange={onChange} initialContent={initialContent} />
+        <MilkdownEditor onChange={onChange} initialContent={initialContent} readOnly={readOnly} />
       </ProsemirrorAdapterProvider>
     </MilkdownProvider>
   );
