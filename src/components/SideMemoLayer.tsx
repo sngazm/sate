@@ -1,8 +1,11 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import type { Memo } from '../lib/frontmatter';
 import type { EditorView } from '@milkdown/prose/view';
-import { memoPluginKey } from './memoDecorationPlugin';
+import { memoPluginKey, MEMO_ANCHORS_UPDATED_EVENT } from './memoDecorationPlugin';
 import './SideMemoLayer.css';
+
+/** メモ間の最低限の縦の間隔 (px) */
+const MEMO_GAP = 8;
 
 /** エディタ水平中央の Y 座標にあたる doc 内 pos を取得 */
 function posAtClientY(view: EditorView, clientY: number): number | null {
@@ -17,7 +20,150 @@ interface SideMemoLayerProps {
   editorViewRef: React.RefObject<EditorView | null>;
 }
 
+/**
+ * レイアウト対象 1 メモ分の情報。
+ * - anchor: 衝突回避前の自然な top (px、container 基準)
+ * - height: 実測したカード高さ
+ * - el: 対応する DOM 要素
+ */
+interface LayoutItem {
+  id: string;
+  side: 'left' | 'right';
+  anchor: number;
+  height: number;
+  el: HTMLElement;
+}
+
+/**
+ * 同じ side のメモ群を、anchor 順にソートしつつ衝突を解消した top を返す。
+ *
+ * - フォーカス中のメモがあるとき: そのメモは anchor の位置に固定し、
+ *   上側にあるメモは上方向に、下側にあるメモは下方向に押し出す。
+ * - フォーカスがないとき: 上から順に貪欲に詰める。
+ */
+function resolveSide(items: LayoutItem[], focusedId: string | null): Map<string, number> {
+  const sorted = [...items].sort((a, b) => a.anchor - b.anchor);
+  const result = new Map<string, number>();
+
+  const focusedIdx = focusedId ? sorted.findIndex((i) => i.id === focusedId) : -1;
+
+  if (focusedIdx === -1) {
+    let lastBottom = -Infinity;
+    for (const item of sorted) {
+      const top = Math.max(item.anchor, lastBottom + MEMO_GAP);
+      result.set(item.id, top);
+      lastBottom = top + item.height;
+    }
+    return result;
+  }
+
+  const focused = sorted[focusedIdx];
+  result.set(focused.id, focused.anchor);
+
+  // フォーカスより下: 通常の貪欲スイープ
+  let lastBottom = focused.anchor + focused.height;
+  for (let i = focusedIdx + 1; i < sorted.length; i++) {
+    const item = sorted[i];
+    const top = Math.max(item.anchor, lastBottom + MEMO_GAP);
+    result.set(item.id, top);
+    lastBottom = top + item.height;
+  }
+
+  // フォーカスより上: 逆向きにスイープ。anchor より上には上げない
+  let lastTop = focused.anchor;
+  for (let i = focusedIdx - 1; i >= 0; i--) {
+    const item = sorted[i];
+    const top = Math.min(item.anchor, lastTop - MEMO_GAP - item.height);
+    result.set(item.id, top);
+    lastTop = top;
+  }
+
+  return result;
+}
+
 export default function SideMemoLayer({ memos, onChange, editorViewRef }: SideMemoLayerProps) {
+  const layerRef = useRef<HTMLDivElement>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const initialLayoutDoneRef = useRef(false);
+
+  // ── 衝突回避レイアウト ──
+  const relayout = useCallback(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    const cards = Array.from(layer.querySelectorAll<HTMLElement>('[data-memo-id]'));
+    if (cards.length === 0) return;
+
+    const left: LayoutItem[] = [];
+    const right: LayoutItem[] = [];
+    for (const el of cards) {
+      const anchorRaw = el.dataset.anchorTop;
+      if (anchorRaw == null) continue;
+      const anchor = parseFloat(anchorRaw);
+      if (!Number.isFinite(anchor)) continue;
+      const memoId = el.dataset.memoId;
+      if (!memoId) continue;
+      const memo = memos.find((m) => m.id === memoId);
+      if (!memo) continue;
+      const item: LayoutItem = {
+        id: memoId,
+        side: memo.side,
+        anchor,
+        height: el.getBoundingClientRect().height,
+        el,
+      };
+      if (memo.side === 'left') left.push(item);
+      else right.push(item);
+    }
+
+    const tops = new Map<string, number>();
+    resolveSide(left, focusedId).forEach((v, k) => tops.set(k, v));
+    resolveSide(right, focusedId).forEach((v, k) => tops.set(k, v));
+
+    const isFirst = !initialLayoutDoneRef.current;
+    if (isFirst) {
+      for (const el of cards) el.classList.add('memo-card--no-transition');
+    }
+    for (const item of [...left, ...right]) {
+      const top = tops.get(item.id);
+      if (top != null) item.el.style.top = `${top}px`;
+      item.el.style.opacity = '1';
+    }
+    if (isFirst) {
+      // 強制リフロー → クラス除去で次回以降はトランジションが効くようにする
+      void layer.offsetHeight;
+      requestAnimationFrame(() => {
+        for (const el of cards) el.classList.remove('memo-card--no-transition');
+      });
+      initialLayoutDoneRef.current = true;
+    }
+  }, [memos, focusedId]);
+
+  // ── アンカー位置更新 (プラグイン経由) を購読 ──
+  useEffect(() => {
+    const layer = layerRef.current;
+    const container = layer?.parentElement;
+    if (!container) return;
+    const handler = () => relayout();
+    container.addEventListener(MEMO_ANCHORS_UPDATED_EVENT, handler);
+    return () => container.removeEventListener(MEMO_ANCHORS_UPDATED_EVENT, handler);
+  }, [relayout]);
+
+  // ── フォーカス変化、メモ配列変化のときに再レイアウト
+  // (relayout の identity が memos / focusedId に依存しているのでこれだけで足りる) ──
+  useEffect(() => {
+    relayout();
+  }, [relayout]);
+
+  // ── 各カードの高さ変化を監視 ──
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => relayout());
+    const cards = layer.querySelectorAll<HTMLElement>('[data-memo-id]');
+    cards.forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+  }, [memos, relayout]);
+
   // ── ガターダブルクリックでメモ作成 ──
   const handleGutterDoubleClick = useCallback(
     (side: 'left' | 'right', e: React.MouseEvent) => {
@@ -33,7 +179,7 @@ export default function SideMemoLayer({ memos, onChange, editorViewRef }: SideMe
   );
 
   return (
-    <div className="side-memo-layer">
+    <div className="side-memo-layer" ref={layerRef}>
       <div className="side-memo-gutter side-memo-gutter-left" onDoubleClick={(e) => handleGutterDoubleClick('left', e)} />
       <div className="side-memo-gutter side-memo-gutter-right" onDoubleClick={(e) => handleGutterDoubleClick('right', e)} />
       {memos.map((m) => (
@@ -42,6 +188,7 @@ export default function SideMemoLayer({ memos, onChange, editorViewRef }: SideMe
           memo={m}
           onChange={(id, content) => onChange(memos.map((x) => (x.id === id ? { ...x, content } : x)))}
           onDelete={(id) => onChange(memos.filter((x) => x.id !== id))}
+          onFocusChange={(id, focused) => setFocusedId((cur) => (focused ? id : cur === id ? null : cur))}
           editorViewRef={editorViewRef}
         />
       ))}
@@ -55,10 +202,11 @@ interface MemoCardProps {
   memo: Memo;
   onChange: (id: string, content: string) => void;
   onDelete: (id: string) => void;
+  onFocusChange: (id: string, focused: boolean) => void;
   editorViewRef: React.RefObject<EditorView | null>;
 }
 
-function MemoCard({ memo, onChange, onDelete, editorViewRef }: MemoCardProps) {
+function MemoCard({ memo, onChange, onDelete, onFocusChange, editorViewRef }: MemoCardProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
@@ -85,8 +233,14 @@ function MemoCard({ memo, onChange, onDelete, editorViewRef }: MemoCardProps) {
   // ── Blur で空メモ削除 ──
   const handleBlur = useCallback(() => {
     setFocused(false);
+    onFocusChange(memo.id, false);
     if (memo.content.trim() === '') onDelete(memo.id);
-  }, [memo.content, memo.id, onDelete]);
+  }, [memo.content, memo.id, onDelete, onFocusChange]);
+
+  const handleFocus = useCallback(() => {
+    setFocused(true);
+    onFocusChange(memo.id, true);
+  }, [memo.id, onFocusChange]);
 
   // ── キーボード ──
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -148,7 +302,7 @@ function MemoCard({ memo, onChange, onDelete, editorViewRef }: MemoCardProps) {
         placeholder="memo"
         rows={1}
         onChange={(e) => { onChange(memo.id, e.target.value); autoResize(); }}
-        onFocus={() => setFocused(true)}
+        onFocus={handleFocus}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
       />

@@ -13,6 +13,9 @@ import type { Memo } from '../lib/frontmatter';
 
 export const memoPluginKey = new PluginKey<Map<string, number>>('memo-positions');
 
+/** アンカー位置が更新されたときに container 上で発火するイベント名 */
+export const MEMO_ANCHORS_UPDATED_EVENT = 'memo-anchors-updated';
+
 /** relativePos (0〜1) → ドキュメント pos */
 function toAbsolutePos(doc: ProseMirrorNode, relativePos: number): number {
   const size = doc.content.size;
@@ -63,11 +66,12 @@ export function createMemoPlugin(
 
     view(editorView) {
       /**
-       * 全メモカードの位置を同期する。
-       * - style.top: coordsAtPos で計算したピクセル座標
-       * - style.opacity: 位置確定後に '1' にして フェードイン
-       *   (インラインスタイルは CSS クラスより優先されるので、
-       *    React の再レンダーで className が変わっても消えない)
+       * 各メモカードの「アンカー位置」(衝突回避前の自然位置) を計算して
+       * dataset.anchorTop に書き込む。実際の表示位置 (style.top) は
+       * SideMemoLayer のレイアウト計算で決定する。
+       *
+       * 計算後 MEMO_ANCHORS_UPDATED_EVENT を container に dispatch して
+       * SideMemoLayer に再レイアウトを促す。
        */
       function syncDOM(view: typeof editorView) {
         const container = containerRef.current;
@@ -83,12 +87,13 @@ export function createMemoPlugin(
           try {
             const clampedPos = Math.max(1, Math.min(pos, view.state.doc.content.size));
             const coords = view.coordsAtPos(clampedPos);
-            el.style.top = `${coords.top - containerRect.top}px`;
-            el.style.opacity = '1';
+            el.dataset.anchorTop = String(coords.top - containerRect.top);
           } catch {
             // 無効な pos
           }
         }
+
+        container.dispatchEvent(new CustomEvent(MEMO_ANCHORS_UPDATED_EVENT));
       }
 
       // ProseMirror の状態変更時に位置を同期

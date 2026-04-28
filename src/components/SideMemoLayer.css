@@ -35,9 +35,14 @@
   width: 160px;
   pointer-events: auto;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: top 0.25s ease, opacity 0.3s ease;
 }
-/* プラグインが el.style.opacity='1' で表示する（インラインスタイルが CSS に優先） */
+/* SideMemoLayer のレイアウト処理が el.style.top と el.style.opacity='1' を設定する。
+ * 初回レイアウトはアニメーションを抑止するため一時的に下記クラスが付与される。 */
+
+.memo-card--no-transition {
+  transition: none !important;
+}
 
 .memo-card--left {
   /* editor-container の左端から 50%-33ch (ガター幅) の右端に配置 */
