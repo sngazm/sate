@@ -13,6 +13,7 @@ import type { Memo } from '../lib/frontmatter';
 import { createMemoPlugin, memoPluginKey, getPositions, syncPositionsToMemos } from './memoDecorationPlugin';
 import { searchPlugin } from './searchPlugin';
 import { controlCharFilterPlugin } from './controlCharFilterPlugin';
+import { toEditorMarkdown, fromEditorMarkdown } from '../lib/emptyLines';
 
 interface EditorComponentProps {
   onChange: (markdown: string) => void;
@@ -140,9 +141,9 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
     Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root);
-        ctx.set(defaultValueCtx, initialContent);
+        ctx.set(defaultValueCtx, toEditorMarkdown(initialContent));
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-          onChangeRef.current(markdown);
+          onChangeRef.current(fromEditorMarkdown(markdown));
         });
       })
       .use(commonmark)
