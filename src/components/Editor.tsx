@@ -9,6 +9,7 @@ import { $prose } from '@milkdown/utils';
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/prose/view';
 import { splitBlock } from '@milkdown/prose/commands';
+import { closeHistory } from '@milkdown/prose/history';
 import type { Memo } from '../lib/frontmatter';
 import { createMemoPlugin, memoPluginKey, getPositions, syncPositionsToMemos } from './memoDecorationPlugin';
 import { searchPlugin } from './searchPlugin';
@@ -34,6 +35,50 @@ const shiftEnterAsSplitPlugin = $prose(() => {
           return splitBlock(view.state, view.dispatch);
         }
         return false;
+      },
+    },
+  });
+});
+
+// 箇条書きの操作（Enter での項目追加、Tab / Shift+Tab 等での階層変更）の前後で
+// Undo 履歴を区切る。history は短時間に続いた隣接する編集を1つにまとめるため、
+// 項目に文字を打ってすぐ Enter → Cmd+Z とすると、直前の文字入力まで消えてしまう。
+//
+// keymap より先に確実に走らせるため handleDOMEvents で拾う（handleKeyDown は
+// プラグインの登録順によっては keymap に先に処理されてしまう）。
+// 操作後の区切りは、keymap のコマンドが同期的に dispatch し終えてから入れる。
+function isListKey(event: KeyboardEvent): boolean {
+  if (event.altKey) return false;
+  const mod = event.metaKey || event.ctrlKey;
+  if (!mod && (event.key === 'Enter' || event.key === 'Tab')) return true;
+  return mod && (event.key === '[' || event.key === ']');
+}
+
+const listHistoryBoundaryPlugin = $prose(() => {
+  return new Plugin({
+    key: new PluginKey('list-history-boundary'),
+    props: {
+      handleDOMEvents: {
+        keydown(view, event) {
+          // IME の確定 Enter は対象外
+          if (event.isComposing || event.keyCode === 229) return false;
+          if (!isListKey(event)) return false;
+          const { $from } = view.state.selection;
+          let inListItem = false;
+          for (let d = $from.depth; d > 0; d--) {
+            if ($from.node(d).type.name === 'list_item') {
+              inListItem = true;
+              break;
+            }
+          }
+          if (!inListItem) return false;
+
+          view.dispatch(closeHistory(view.state.tr));
+          queueMicrotask(() => {
+            if (!view.isDestroyed) view.dispatch(closeHistory(view.state.tr));
+          });
+          return false;
+        },
       },
     },
   });
@@ -149,6 +194,7 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
       .use(history)
       .use(listener)
       .use(shiftEnterAsSplitPlugin)
+      .use(listHistoryBoundaryPlugin)
       .use(typewriterScrollPlugin)
       .use(selectionHighlightPlugin)
       .use(clipboardTextSerializerPlugin)
