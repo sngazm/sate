@@ -8,6 +8,7 @@
  *
  * - 段落と段落の間: 空行 1 つが通常の区切り。2 つ目以降の空行 1 つにつき空段落 1 つ
  * - 文書の先頭: 空行 1 つにつき空段落 1 つ
+ * - 文書の末尾: 最後の改行に続く空行 1 つにつき空段落 1 つ
  *
  * エディタに渡す前に `<br />` 形式へ戻し、エディタから受け取った直後に
  * 空行形式へ変換する。エディタの外（ファイル・スナップショット・検索・公開）は
@@ -58,8 +59,9 @@ export function toEditorMarkdown(markdown: string): string {
     const count = end - i;
     const atStart = i === 0;
     const next = lines[end];
-    // 文末の空行や、インデントされた行（リストの続き・インデントコード）の前は触らない
-    const convertible = next !== undefined && !/^\s/.test(next);
+    // インデントされた行（リストの続き・インデントコード）の前は触らない。
+    // 文末は最後の改行のぶんの空要素があるので、段落間と同じく 1 つ引く
+    const convertible = next === undefined || !/^\s/.test(next);
     const empties = convertible ? (atStart ? count : count - 1) : 0;
     if (empties <= 0) {
       out.push(...lines.slice(i, end));
