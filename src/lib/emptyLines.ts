@@ -91,7 +91,9 @@ export function fromEditorMarkdown(markdown: string): string {
       if (i + 1 < lines.length) i++;
       continue;
     }
-    out.push(lines[i]);
+    // 段落先頭の強制改行は行末スペース 2 つだけの行になる。Markdown では空行と
+    // 同じ扱いなので、見えない空白を残さず空行にする
+    out.push(!fenced[i] && isBlank(lines[i]) ? '' : lines[i]);
   }
   return out.join('\n');
 }
