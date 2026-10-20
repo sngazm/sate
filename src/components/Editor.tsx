@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { commonmark, codeBlockKeymap } from '@milkdown/preset-commonmark';
 import { history } from '@milkdown/plugin-history';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
@@ -8,11 +8,12 @@ import { ProsemirrorAdapterProvider } from '@prosemirror-adapter/react';
 import { $prose } from '@milkdown/utils';
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/prose/view';
-import { splitBlock } from '@milkdown/prose/commands';
 import type { Memo } from '../lib/frontmatter';
 import { createMemoPlugin, memoPluginKey, getPositions, syncPositionsToMemos } from './memoDecorationPlugin';
 import { searchPlugin } from './searchPlugin';
 import { controlCharFilterPlugin } from './controlCharFilterPlugin';
+import { lineBreakPlugin } from './lineBreakPlugin';
+import { toEditorMarkdown, fromEditorMarkdown } from '../lib/emptyLines';
 
 interface EditorComponentProps {
   onChange: (markdown: string) => void;
@@ -23,33 +24,6 @@ interface EditorComponentProps {
   editorViewRef: React.MutableRefObject<import('@milkdown/prose/view').EditorView | null>;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
-
-// Shift+Enter を通常のEnter（段落分割）と同じにする
-const shiftEnterAsSplitPlugin = $prose(() => {
-  return new Plugin({
-    key: new PluginKey('shift-enter-as-split'),
-    props: {
-      handleKeyDown(view, event) {
-        if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
-          return splitBlock(view.state, view.dispatch);
-        }
-        return false;
-      },
-    },
-  });
-});
-
-// コピー時のプレーンテキストを段落ごとに改行1つで区切る（デフォルトは\n\n）
-const clipboardTextSerializerPlugin = $prose(() => {
-  return new Plugin({
-    key: new PluginKey('clipboard-text-serializer'),
-    props: {
-      clipboardTextSerializer(slice) {
-        return slice.content.textBetween(0, slice.content.size, '\n');
-      },
-    },
-  });
-});
 
 // タイプライター方式のスクロール。書いている行が画面の垂直中央より下に
 // 行かないように、ProseMirror がカーソルを画面内に収めるタイミング
@@ -140,18 +114,27 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
     Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root);
-        ctx.set(defaultValueCtx, initialContent);
+        ctx.set(defaultValueCtx, toEditorMarkdown(initialContent));
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-          onChangeRef.current(markdown);
+          onChangeRef.current(fromEditorMarkdown(markdown));
         });
+        // 強制改行は `\` + 改行ではなく行末スペース 2 つで書き出す。
+        // 見出しの中など改行を書けない場所では、標準と同じく空白にする
+        ctx.update(remarkStringifyOptionsCtx, (options) => ({
+          ...options,
+          handlers: {
+            ...options.handlers,
+            break: (_node, _parent, state, info) =>
+              state.stack.some((c) => c === 'headingAtx' || c === 'headingSetext') ? (/[ \t]$/.test(info.before) ? '' : ' ') : '  \n',
+          },
+        }));
       })
       .use(commonmark)
       .use(history)
       .use(listener)
-      .use(shiftEnterAsSplitPlugin)
+      .use(lineBreakPlugin)
       .use(typewriterScrollPlugin)
       .use(selectionHighlightPlugin)
-      .use(clipboardTextSerializerPlugin)
       .use(searchPlugin)
       .use(controlCharFilterPlugin)
       .use(memoPlugin)
