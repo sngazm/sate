@@ -14,6 +14,7 @@ import type { Memo } from '../lib/frontmatter';
 import { createMemoPlugin, memoPluginKey, getPositions, syncPositionsToMemos } from './memoDecorationPlugin';
 import { searchPlugin } from './searchPlugin';
 import { controlCharFilterPlugin } from './controlCharFilterPlugin';
+import { imeCommitGuardPlugin } from './imeCommitGuardPlugin';
 
 interface EditorComponentProps {
   onChange: (markdown: string) => void;
@@ -194,6 +195,7 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
       .use(history)
       .use(listener)
       .use(shiftEnterAsSplitPlugin)
+      .use(imeCommitGuardPlugin)
       .use(listHistoryBoundaryPlugin)
       .use(typewriterScrollPlugin)
       .use(selectionHighlightPlugin)
