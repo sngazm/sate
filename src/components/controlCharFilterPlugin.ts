@@ -10,33 +10,12 @@
  * - 追加のトランザクションは history で元の入力と同じ履歴にまとまるため、Undo で復活しない
  */
 import { Plugin, PluginKey } from '@milkdown/prose/state';
-import type { Transaction } from '@milkdown/prose/state';
 import { $prose } from '@milkdown/utils';
+import { changedRanges } from '../lib/changedRanges';
 
 // タブ（\x09）・改行（\x0A）・CR（\x0D）以外の C0 制御文字と DEL
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
-
-interface Range {
-  from: number;
-  to: number;
-}
-
-/** trs で変更された範囲を、最後のドキュメント上の位置で返す */
-function changedRanges(trs: readonly Transaction[]): Range[] {
-  let ranges: Range[] = [];
-  for (const tr of trs) {
-    if (!tr.docChanged) continue;
-    ranges = ranges.map((r) => ({ from: tr.mapping.map(r.from, -1), to: tr.mapping.map(r.to, 1) }));
-    tr.mapping.maps.forEach((map, i) => {
-      const rest = tr.mapping.slice(i + 1);
-      map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-        ranges.push({ from: rest.map(newStart, -1), to: rest.map(newEnd, 1) });
-      });
-    });
-  }
-  return ranges;
-}
 
 export function createControlCharFilterPlugin() {
   return new Plugin({

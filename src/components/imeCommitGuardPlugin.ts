@@ -10,18 +10,22 @@
  * 同じ文字列が次の項目にも入る（変換中の文節が選択されていた場合は、文字列が次の
  * 項目へ移って元の項目が空になる）。
  *
- * 変換中に handleKeyDown へ Enter が届くのは、この DOM 変化からの推定だけ
- * （本物の Enter キーは、変換中は ProseMirror が handleKeyDown に渡さない）。
- * そこで推定の Enter が来たら分割はせず、変換中の文字列だけを消す。続く
- * insertFromComposition で確定文字列が同じ位置に入り、1 つの項目に収まる。
+ * ProseMirror が DOM 変化から推定した Enter は keyEvent() で作った素の Event で、
+ * 本物のキー入力（KeyboardEvent）と区別できる。推定の Enter が来たら分割はせず、
+ * 変換中の文字列だけを消す。続く insertFromComposition で確定文字列が同じ位置に入り、
+ * 1 つの項目に収まる。view.composing は使わない。WebKit は compositionend を
+ * 先に投げてから DOM を消すことがあり、その時点で composing は false になっているため。
  *
  * 変換中の文字列の位置は、composition メタの付いたトランザクションが変更した範囲を
  * 追って求める。念のため、その範囲の文字列が直近の compositionupdate の内容と
  * 一致するときだけ消す（一致しなければ ProseMirror の既定の動作に任せる）。
+ * 消すトランザクションには同じ composition メタを付けて、history で変換中の入力と
+ * 同じ履歴にまとめる。
  */
 import { Plugin, PluginKey } from '@milkdown/prose/state';
 import type { Transaction } from '@milkdown/prose/state';
 import { $prose } from '@milkdown/utils';
+import { changedRanges } from '../lib/changedRanges';
 
 interface ComposedRange {
   /** ProseMirror が振る composition の ID（composition メタの値） */
@@ -32,18 +36,14 @@ interface ComposedRange {
 
 const key = new PluginKey<ComposedRange | null>('ime-commit-guard');
 
-/** tr が変更した範囲を、tr 適用後の位置で返す */
+/** tr が変更した範囲全体を、tr 適用後の位置で返す */
 function changedRange(tr: Transaction): { from: number; to: number } | null {
-  let from = Infinity;
-  let to = -Infinity;
-  tr.mapping.maps.forEach((map, i) => {
-    const rest = tr.mapping.slice(i + 1);
-    map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-      from = Math.min(from, rest.map(newStart, -1));
-      to = Math.max(to, rest.map(newEnd, 1));
-    });
-  });
-  return from === Infinity ? null : { from, to };
+  const ranges = changedRanges([tr]);
+  if (ranges.length === 0) return null;
+  return {
+    from: Math.min(...ranges.map((r) => r.from)),
+    to: Math.max(...ranges.map((r) => r.to)),
+  };
 }
 
 function track(tr: Transaction, prev: ComposedRange | null): ComposedRange | null {
@@ -74,16 +74,21 @@ export function createImeCommitGuardPlugin() {
           return false;
         },
         compositionupdate(_view, event) {
-          composing = event.data;
+          composing = event.data ?? '';
           return false;
         },
       },
       handleKeyDown(view, event) {
-        if (!view.composing || event.key !== 'Enter') return false;
+        // 本物のキー入力が届いた時点で、確定直後の推定 Enter が来る余地はない
+        if (typeof KeyboardEvent !== 'undefined' && event instanceof KeyboardEvent) {
+          composing = '';
+          return false;
+        }
+        if (event.key !== 'Enter') return false;
         const range = key.getState(view.state);
         if (!range || range.from >= range.to || !composing) return false;
         if (view.state.doc.textBetween(range.from, range.to) !== composing) return false;
-        view.dispatch(view.state.tr.delete(range.from, range.to));
+        view.dispatch(view.state.tr.delete(range.from, range.to).setMeta('composition', range.id));
         return true;
       },
     },
