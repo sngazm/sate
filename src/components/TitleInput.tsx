@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { EditorView } from '@milkdown/prose/view';
+import type { Node as ProseNode } from '@milkdown/prose/model';
 import './TitleInput.css';
+
+/** 文書で最初の textblock の中身の開始位置。textblock が無ければ null */
+function firstTextblockStart(doc: ProseNode): number | null {
+  let found: number | null = null;
+  doc.descendants((node, pos) => {
+    if (found !== null) return false;
+    if (node.isTextblock) {
+      found = pos + 1;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
 
 interface TitleInputProps {
   value: string | null;
@@ -34,6 +49,9 @@ export default function TitleInput({ value, onChange, editorViewRef }: TitleInpu
   // エディタから上矢印キーでタイトルにフォーカス
   // capture phase で受けて、ProseMirror が処理する前に判定する。
   // 「最初の textblock の最上段 visual line」かつ IME 変換中でない場合のみ移動。
+  // トップレベルのブロック位置ではなく textblock で判定する。箇条書きはリスト全体が
+  // 1つのトップレベルブロックなので、ブロック位置だけ見ると2つ目以降の項目からも
+  // タイトルへ飛んでしまう。
   useEffect(() => {
     const handleEditorKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowUp') return;
@@ -46,7 +64,8 @@ export default function TitleInput({ value, onChange, editorViewRef }: TitleInpu
       const { state } = view;
       const { $head, empty } = state.selection;
       if (!empty) return;
-      if ($head.before(1) !== 0) return;
+      if (!$head.parent.isTextblock) return;
+      if ($head.start() !== firstTextblockStart(state.doc)) return;
       if (!view.endOfTextblock('up')) return;
 
       e.preventDefault();
