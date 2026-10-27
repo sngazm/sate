@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { commonmark, codeBlockKeymap } from '@milkdown/preset-commonmark';
 import { history } from '@milkdown/plugin-history';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
@@ -8,13 +8,15 @@ import { ProsemirrorAdapterProvider } from '@prosemirror-adapter/react';
 import { $prose } from '@milkdown/utils';
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/prose/view';
-import { splitBlock } from '@milkdown/prose/commands';
+import type { ResolvedPos } from '@milkdown/prose/model';
 import { closeHistory } from '@milkdown/prose/history';
 import type { Memo } from '../lib/frontmatter';
 import { createMemoPlugin, memoPluginKey, getPositions, syncPositionsToMemos } from './memoDecorationPlugin';
 import { searchPlugin } from './searchPlugin';
 import { controlCharFilterPlugin } from './controlCharFilterPlugin';
 import { imeCommitGuardPlugin } from './imeCommitGuardPlugin';
+import { lineBreakPlugin } from './lineBreakPlugin';
+import { toEditorMarkdown, fromEditorMarkdown } from '../lib/emptyLines';
 
 interface EditorComponentProps {
   onChange: (markdown: string) => void;
@@ -26,53 +28,42 @@ interface EditorComponentProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
-// Shift+Enter を通常のEnter（段落分割）と同じにする
-const shiftEnterAsSplitPlugin = $prose(() => {
-  return new Plugin({
-    key: new PluginKey('shift-enter-as-split'),
-    props: {
-      handleKeyDown(view, event) {
-        if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
-          return splitBlock(view.state, view.dispatch);
-        }
-        return false;
-      },
-    },
-  });
-});
-
-// 箇条書きの操作（Enter での項目追加、Tab / Shift+Tab 等での階層変更）の前後で
+// 改行・改段落と箇条書きの操作（Enter、Tab / Shift+Tab 等での階層変更）の前後で
 // Undo 履歴を区切る。history は短時間に続いた隣接する編集を1つにまとめるため、
-// 項目に文字を打ってすぐ Enter → Cmd+Z とすると、直前の文字入力まで消えてしまう。
+// 文字を打ってすぐ Enter → Cmd+Z とすると、直前の文字入力まで消えてしまう。
+// Enter はどこでも区切り、Tab / Cmd+[ / Cmd+] は箇条書きの中だけ区切る。
 //
 // keymap より先に確実に走らせるため handleDOMEvents で拾う（handleKeyDown は
 // プラグインの登録順によっては keymap に先に処理されてしまう）。
 // 操作後の区切りは、keymap のコマンドが同期的に dispatch し終えてから入れる。
+function isEnterKey(event: KeyboardEvent): boolean {
+  return event.key === 'Enter' && !event.altKey && !event.metaKey && !event.ctrlKey;
+}
+
 function isListKey(event: KeyboardEvent): boolean {
   if (event.altKey) return false;
   const mod = event.metaKey || event.ctrlKey;
-  if (!mod && (event.key === 'Enter' || event.key === 'Tab')) return true;
+  if (!mod && event.key === 'Tab') return true;
   return mod && (event.key === '[' || event.key === ']');
 }
 
-const listHistoryBoundaryPlugin = $prose(() => {
+function inListItem($pos: ResolvedPos): boolean {
+  for (let d = $pos.depth; d > 0; d--) {
+    if ($pos.node(d).type.name === 'list_item') return true;
+  }
+  return false;
+}
+
+const historyBoundaryPlugin = $prose(() => {
   return new Plugin({
-    key: new PluginKey('list-history-boundary'),
+    key: new PluginKey('history-boundary'),
     props: {
       handleDOMEvents: {
         keydown(view, event) {
           // IME の確定 Enter は対象外
           if (event.isComposing || event.keyCode === 229) return false;
-          if (!isListKey(event)) return false;
           const { $from } = view.state.selection;
-          let inListItem = false;
-          for (let d = $from.depth; d > 0; d--) {
-            if ($from.node(d).type.name === 'list_item') {
-              inListItem = true;
-              break;
-            }
-          }
-          if (!inListItem) return false;
+          if (!isEnterKey(event) && !(isListKey(event) && inListItem($from))) return false;
 
           view.dispatch(closeHistory(view.state.tr));
           queueMicrotask(() => {
@@ -80,18 +71,6 @@ const listHistoryBoundaryPlugin = $prose(() => {
           });
           return false;
         },
-      },
-    },
-  });
-});
-
-// コピー時のプレーンテキストを段落ごとに改行1つで区切る（デフォルトは\n\n）
-const clipboardTextSerializerPlugin = $prose(() => {
-  return new Plugin({
-    key: new PluginKey('clipboard-text-serializer'),
-    props: {
-      clipboardTextSerializer(slice) {
-        return slice.content.textBetween(0, slice.content.size, '\n');
       },
     },
   });
@@ -186,20 +165,29 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
     Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root);
-        ctx.set(defaultValueCtx, initialContent);
+        ctx.set(defaultValueCtx, toEditorMarkdown(initialContent));
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-          onChangeRef.current(markdown);
+          onChangeRef.current(fromEditorMarkdown(markdown));
         });
+        // 強制改行は `\` + 改行ではなく行末スペース 2 つで書き出す。
+        // 見出しの中など改行を書けない場所では、標準と同じく空白にする
+        ctx.update(remarkStringifyOptionsCtx, (options) => ({
+          ...options,
+          handlers: {
+            ...options.handlers,
+            break: (_node, _parent, state, info) =>
+              state.stack.some((c) => c === 'headingAtx' || c === 'headingSetext') ? (/[ \t]$/.test(info.before) ? '' : ' ') : '  \n',
+          },
+        }));
       })
       .use(commonmark)
       .use(history)
       .use(listener)
-      .use(shiftEnterAsSplitPlugin)
       .use(imeCommitGuardPlugin)
-      .use(listHistoryBoundaryPlugin)
+      .use(lineBreakPlugin)
+      .use(historyBoundaryPlugin)
       .use(typewriterScrollPlugin)
       .use(selectionHighlightPlugin)
-      .use(clipboardTextSerializerPlugin)
       .use(searchPlugin)
       .use(controlCharFilterPlugin)
       .use(memoPlugin)

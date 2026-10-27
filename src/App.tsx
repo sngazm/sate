@@ -77,6 +77,8 @@ function App() {
     for (let i = 0; i < paragraphs.length; i++) {
       const text = paragraphs[i].replace(/<[^>]*>/g, '').replace(/\s/g, '');
       count += text.length;
+      // 改段落と強制改行（行末スペース 2 つ）は 1 文字ずつ数える
+      count += (paragraphs[i].match(/ {2}\n/g) ?? []).length;
       if (i < paragraphs.length - 1) count += 1;
     }
     return count;

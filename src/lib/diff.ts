@@ -40,13 +40,13 @@ const MAX_CHARS_FOR_PAIRING = 1500;
  * Rewind プレビュー用に Markdown 的な「装飾用記号」を剥がす。
  *
  * Milkdown は本文を CommonMark として保存するので、太字なら `**...**`、
- * Shift+Enter の改行なら `<br />` といった「素のままだとノイズになる記号」が
+ * 古いファイルの空段落なら `<br />` といった「素のままだとノイズになる記号」が
  * テキストに混じる。本格的にレンダリングするのは重いので、目立つやつだけ
  * 取り除いて読みやすくする。装飾の見た目（太字表示など）は再現されない。
  */
 export function cleanMarkdownForDisplay(text: string): string {
   return text
-    // <br /> <br/> <br> を空白に置き換え（Shift+Enter の見えない改行）
+    // <br /> <br/> <br> を空白に置き換え（過去のスナップショットに残る空段落）
     .replace(/<br\s*\/?>/gi, ' ')
     // 強調記号（** ~~ __）を除去
     .replace(/\*\*/g, '')

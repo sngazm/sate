@@ -80,6 +80,16 @@
   line-height: 2;
 }
 
+/* 段落の間は空行 1 つぶん空ける（行の高さ = 1em × line-height 2）。
+   空段落はそれ自体が空行 1 つなので、その後ろには余白を付けない。
+   改行と改段落の扱いは lineBreakPlugin.ts を参照 */
+.editor-wrapper .ProseMirror p + p {
+  margin-top: 2em;
+}
+.editor-wrapper .ProseMirror p:has(> br.ProseMirror-trailingBreak:only-child) + p {
+  margin-top: 0;
+}
+
 /* ネイティブ選択ハイライトを消す */
 .editor-wrapper .ProseMirror ::selection {
   background-color: transparent !important;
