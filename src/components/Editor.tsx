@@ -8,6 +8,7 @@ import { ProsemirrorAdapterProvider } from '@prosemirror-adapter/react';
 import { $prose } from '@milkdown/utils';
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/prose/view';
+import type { ResolvedPos } from '@milkdown/prose/model';
 import { closeHistory } from '@milkdown/prose/history';
 import type { Memo } from '../lib/frontmatter';
 import { createMemoPlugin, memoPluginKey, getPositions, syncPositionsToMemos } from './memoDecorationPlugin';
@@ -27,38 +28,42 @@ interface EditorComponentProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
-// 箇条書きの操作（Enter での項目追加、Tab / Shift+Tab 等での階層変更）の前後で
+// 改行・改段落と箇条書きの操作（Enter、Tab / Shift+Tab 等での階層変更）の前後で
 // Undo 履歴を区切る。history は短時間に続いた隣接する編集を1つにまとめるため、
-// 項目に文字を打ってすぐ Enter → Cmd+Z とすると、直前の文字入力まで消えてしまう。
+// 文字を打ってすぐ Enter → Cmd+Z とすると、直前の文字入力まで消えてしまう。
+// Enter はどこでも区切り、Tab / Cmd+[ / Cmd+] は箇条書きの中だけ区切る。
 //
 // keymap より先に確実に走らせるため handleDOMEvents で拾う（handleKeyDown は
 // プラグインの登録順によっては keymap に先に処理されてしまう）。
 // 操作後の区切りは、keymap のコマンドが同期的に dispatch し終えてから入れる。
+function isEnterKey(event: KeyboardEvent): boolean {
+  return event.key === 'Enter' && !event.altKey && !event.metaKey && !event.ctrlKey;
+}
+
 function isListKey(event: KeyboardEvent): boolean {
   if (event.altKey) return false;
   const mod = event.metaKey || event.ctrlKey;
-  if (!mod && (event.key === 'Enter' || event.key === 'Tab')) return true;
+  if (!mod && event.key === 'Tab') return true;
   return mod && (event.key === '[' || event.key === ']');
 }
 
-const listHistoryBoundaryPlugin = $prose(() => {
+function inListItem($pos: ResolvedPos): boolean {
+  for (let d = $pos.depth; d > 0; d--) {
+    if ($pos.node(d).type.name === 'list_item') return true;
+  }
+  return false;
+}
+
+const historyBoundaryPlugin = $prose(() => {
   return new Plugin({
-    key: new PluginKey('list-history-boundary'),
+    key: new PluginKey('history-boundary'),
     props: {
       handleDOMEvents: {
         keydown(view, event) {
           // IME の確定 Enter は対象外
           if (event.isComposing || event.keyCode === 229) return false;
-          if (!isListKey(event)) return false;
           const { $from } = view.state.selection;
-          let inListItem = false;
-          for (let d = $from.depth; d > 0; d--) {
-            if ($from.node(d).type.name === 'list_item') {
-              inListItem = true;
-              break;
-            }
-          }
-          if (!inListItem) return false;
+          if (!isEnterKey(event) && !(isListKey(event) && inListItem($from))) return false;
 
           view.dispatch(closeHistory(view.state.tr));
           queueMicrotask(() => {
@@ -180,7 +185,7 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
       .use(listener)
       .use(imeCommitGuardPlugin)
       .use(lineBreakPlugin)
-      .use(listHistoryBoundaryPlugin)
+      .use(historyBoundaryPlugin)
       .use(typewriterScrollPlugin)
       .use(selectionHighlightPlugin)
       .use(searchPlugin)
