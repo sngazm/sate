@@ -20,10 +20,13 @@
 //! 非公開 API は起動後に探し、見つからなければぼかさずに出し入れする（`blur_api`）。
 
 use std::ffi::{c_char, c_void};
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use block2::RcBlock;
+use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt};
@@ -139,7 +142,27 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             .into(),
     );
     panel.set_hides_on_deactivate(false);
+    hide_on_app_switch(app);
     Ok(())
+}
+
+/// ほかのアプリが前面に来たら（`Cmd+Tab`、Dock、別の画面のクリックなど）バイザーを隠す。
+/// バイザーは Sate を前面にしないので、そのままだと切り替えた先のアプリの上に残ってしまう
+fn hide_on_app_switch(app: &AppHandle) {
+    let handle = app.clone();
+    let block = RcBlock::new(move |_: NonNull<objc2_foundation::NSNotification>| {
+        // AppKit の通知の処理中に触らず、イベントループに戻ってから隠す
+        crate::main_window::on_main_thread_later(&handle, |app| hide_visor(app.clone()));
+    });
+    // 通知名は AppKit の定数（読むだけ）。通知センターは登録を保持し、アプリが終わるまで外さないので戻り値は捨てる
+    let _observer = unsafe {
+        NSWorkspace::sharedWorkspace().notificationCenter().addObserverForName_object_queue_usingBlock(
+            Some(NSWorkspaceDidActivateApplicationNotification),
+            None,
+            None,
+            &block,
+        )
+    };
 }
 
 /// バイザーのホットキーを登録し直す。`None` なら外す（設定画面でキーを記録している間）。

@@ -73,7 +73,7 @@ fn observe(name: &'static NSNotificationName, app: &AppHandle, handler: fn(&AppH
 }
 
 /// AppKit の通知の処理中に触らず、イベントループに戻ってから実行する
-fn on_main_thread_later(app: &AppHandle, f: fn(&AppHandle)) {
+pub(crate) fn on_main_thread_later(app: &AppHandle, f: fn(&AppHandle)) {
     let handle = app.clone();
     std::thread::spawn(move || {
         let app = handle.clone();

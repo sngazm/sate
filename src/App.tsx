@@ -290,6 +290,8 @@ function App({ visor = false }: AppProps) {
         stepSearch(editorViewRef.current, e.shiftKey ? -1 : 1);
       }
       if (e.metaKey && e.key === '/') { e.preventDefault(); setShowShortcuts((v) => !v); }
+      // バイザーは Cmd+W でも隠す。枠の無いパネルは、メニューの「閉じる」（performClose）では閉じられない
+      if (visor && e.metaKey && e.key.toLowerCase() === 'w') { e.preventDefault(); invoke('hide_visor'); }
       // 設定はメイン画面だけで変える（バイザーで変えるとメイン画面の設定が古いまま残る）
       if (e.metaKey && e.key === ',' && !visor) { e.preventDefault(); setShowSettings((v) => !v); }
       if (e.key === 'Escape') {
