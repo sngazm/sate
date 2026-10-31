@@ -38,21 +38,17 @@ src-tauri/              # Rust バックエンド
   tauri.conf.json       # Tauri設定
 ```
 
-## メイン画面とバイザー（画面が2つ同時に動く）
+## Sate の画面（Dive）
 
-バイザー（ホットキーで画面に重なるエディタ、`spec/visor.md`）は、メイン画面と同じ `App` を別のウィンドウ（ラベル `visor`）で動かしている。
-両方が同じファイルを開くので、次を守る。
+Sate の画面は一つだけで、ふだんは隠れている。起動・ホットキー・Dock・`Cmd+Tab` で画面全体に重ねて出し、
+`Esc`・`Cmd+W`・ほかのアプリへの切り替えで隠す（`spec/dive.md`、`src-tauri/src/dive.rs`）。
+コードの中ではこの画面を「Dive」と呼ぶが、画面や環境設定には出さない（利用者には「Sate の画面」）。
 
-- **vault（ユーザーの .md）への書き込みは `src/lib/vaultWrite.ts` を通す。** 書いてよいのはバトン（書き込み役）を持っている画面だけで、
-  持っていない画面が書くと古い内容でもう一方の編集を上書きする（2026-06 のデータ消失と同じ形）。
-  `@tauri-apps/plugin-fs` の書き込み系を直接 import すると eslint（`no-restricted-imports`）でエラーになる。
-  例外は `eslint.config.js` に理由付きで列挙している（照合 `reconcile.ts` はメイン画面だけが起動時に行う、など）
-- **起動時や定期的に副作用のある処理は、2つの画面で動くことを前提に `visor` で分ける。** いまメイン画面だけで行うもの:
-  照合（reconcile）、起動時の DB 初期化、ホットキーの登録、環境設定（`App.tsx` の `visor` を参照）
-- **Rust からのイベントは `getCurrentWebviewWindow().listen` で受ける。** `@tauri-apps/api/event` の `listen` は、
-  ほかのウィンドウ宛て（`emit_to`）のイベントまで受けてしまう
-- 画面のあいだで引き継ぐのはファイルの中身とキャレット位置だけ。取り消し履歴・Rewind・検索・スクロール位置は画面ごとに別
-- メイン画面は `Cmd+W` でも壊さず、全画面を解除して画面から外し、Sate ごと隠す（`src-tauri/src/main_window.rs`）。起動中、メイン画面のウィンドウはずっと同じ1枚
+- **vault（ユーザーの .md）への書き込みは `src/lib/vaultWrite.ts` を通す。** 書き換える場所を一か所に集めておく
+  （2026-06 のデータ消失の教訓）。`@tauri-apps/plugin-fs` の書き込み系を直接 import すると eslint（`no-restricted-imports`）で
+  エラーになる。例外は `eslint.config.js` に理由付きで列挙している
+- **Rust からのイベントは `getCurrentWebviewWindow().listen` で受ける。**
+- 隠しても Sate は終わらない。ウィンドウはずっと同じ1枚で、閉じる要求が来ても閉じずに隠す
 
 ### 実機確認（隔離ビルド）
 
@@ -65,7 +61,7 @@ pnpm tauri build --debug --bundles app --config '{"identifier":"club.image.sate.
 open "src-tauri/target/debug/bundle/macos/Sate Dev.app"
 ```
 
-バイザーのホットキーは本物の Sate とぶつかるので、どちらか一方だけ起動する。
+Sate を開閉するホットキーは本物の Sate とぶつかるので、ホットキーを試すときはどちらか一方だけ起動する。
 
 ## Tauri v2 重要事項
 

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and the visor panel",
-  "windows": ["main", "visor"],
+  "description": "Capability for the Sate window",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:menu:default",

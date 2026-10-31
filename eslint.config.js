@@ -20,12 +20,12 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
-      // vault への書き込みは src/lib/vaultWrite.ts を通す（メイン画面とバイザーの上書き防止。spec/visor.md）
+      // vault への書き込みは src/lib/vaultWrite.ts を通す（書き換える場所を一か所に集める）
       'no-restricted-imports': ['error', {
         paths: [{
           name: '@tauri-apps/plugin-fs',
           importNames: ['writeTextFile', 'writeFile', 'remove', 'rename', 'copyFile', 'truncate', 'create'],
-          message: 'vault のファイルは src/lib/vaultWrite.ts の writeVaultFile / removeVaultFile で書き換える（バトンを持たない画面が書くと上書き事故になる）。',
+          message: 'vault のファイルは src/lib/vaultWrite.ts の writeVaultFile / removeVaultFile で書き換える（どこから vault が変わりうるかを一か所で追えるようにする）。',
         }],
       }],
     },
@@ -33,7 +33,7 @@ export default defineConfig([
   {
     // fs の書き込みを直接使ってよいファイル
     // - vaultWrite.ts: 書き込みの入口そのもの
-    // - reconcile.ts: 照合でフロントマターを補う。メイン画面だけが起動時に行う（App.tsx）
+    // - reconcile.ts: 照合でフロントマターを補う。起動時に行う（App.tsx）
     // - db.ts, useSettings.ts: vault ではなく AppConfig（DB の移行、settings.json）に書く
     files: ['src/lib/vaultWrite.ts', 'src/lib/reconcile.ts', 'src/lib/db.ts', 'src/hooks/useSettings.ts'],
     rules: {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { Settings } from '../hooks/useSettings';
-import { DEFAULT_VISOR_SHORTCUT } from '../lib/shortcut';
+import { DEFAULT_HOTKEY } from '../lib/shortcut';
 import ShortcutRecorder from './ShortcutRecorder';
 import './SettingsDialog.css';
 
@@ -20,19 +20,19 @@ export default function SettingsDialog({
 }: SettingsDialogProps) {
   const [baseDir, setBaseDir] = useState(settings.baseDir);
   const [publishCommand, setPublishCommand] = useState(settings.publishCommand ?? '');
-  const savedEnabled = settings.visorEnabled ?? false;
-  const savedShortcut = settings.visorShortcut ?? DEFAULT_VISOR_SHORTCUT;
-  const [visorEnabled, setVisorEnabled] = useState(savedEnabled);
-  const [visorShortcut, setVisorShortcut] = useState(savedShortcut);
+  const savedEnabled = settings.hotkeyEnabled ?? false;
+  const savedHotkey = settings.hotkey ?? DEFAULT_HOTKEY;
+  const [hotkeyEnabled, setHotkeyEnabled] = useState(savedEnabled);
+  const [hotkey, setHotkey] = useState(savedHotkey);
 
   useEffect(() => {
     if (visible) {
       setBaseDir(settings.baseDir);
       setPublishCommand(settings.publishCommand ?? '');
-      setVisorEnabled(savedEnabled);
-      setVisorShortcut(savedShortcut);
+      setHotkeyEnabled(savedEnabled);
+      setHotkey(savedHotkey);
     }
-  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedShortcut]);
+  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedHotkey]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -51,7 +51,7 @@ export default function SettingsDialog({
     const trimmed = baseDir.trim();
     if (!trimmed) return;
     const trimmedPublish = publishCommand.trim();
-    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, visorEnabled, visorShortcut });
+    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, hotkeyEnabled, hotkey });
     onClose();
   };
 
@@ -88,21 +88,21 @@ export default function SettingsDialog({
         </div>
 
         <div className="settings-field">
-          <label className="settings-label">バイザー</label>
+          <label className="settings-label">ホットキー</label>
           <label className="settings-check">
             <input
               type="checkbox"
-              checked={visorEnabled}
-              onChange={(e) => setVisorEnabled(e.target.checked)}
+              checked={hotkeyEnabled}
+              onChange={(e) => setHotkeyEnabled(e.target.checked)}
             />
-            ホットキーでバイザーを開閉する
+            どのアプリを使っていても、ホットキーで Sate を開閉する
           </label>
           <ShortcutRecorder
-            value={visorShortcut}
-            active={savedEnabled ? savedShortcut : null}
-            defaultValue={DEFAULT_VISOR_SHORTCUT}
-            disabled={!visorEnabled}
-            onChange={setVisorShortcut}
+            value={hotkey}
+            active={savedEnabled ? savedHotkey : null}
+            defaultValue={DEFAULT_HOTKEY}
+            disabled={!hotkeyEnabled}
+            onChange={setHotkey}
           />
         </div>
 

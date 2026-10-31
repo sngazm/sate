@@ -17,7 +17,6 @@ import { controlCharFilterPlugin } from './controlCharFilterPlugin';
 import { imeCommitGuardPlugin } from './imeCommitGuardPlugin';
 import { lineBreakPlugin } from './lineBreakPlugin';
 import { toEditorMarkdown, fromEditorMarkdown } from '../lib/emptyLines';
-import { restoreCaret, type Caret } from '../lib/baton';
 
 interface EditorComponentProps {
   onChange: (markdown: string) => void;
@@ -27,8 +26,6 @@ interface EditorComponentProps {
   onMemosChange: (memos: Memo[]) => void;
   editorViewRef: React.MutableRefObject<import('@milkdown/prose/view').EditorView | null>;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  /** 作ったときに置くキャレット（バイザーとの受け渡しで読み直したとき）。使ったら null に戻す */
-  initialCaretRef?: React.MutableRefObject<Caret | null>;
 }
 
 // 改行・改段落と箇条書きの操作（Enter、Tab / Shift+Tab 等での階層変更）の前後で
@@ -155,7 +152,7 @@ const selectionHighlightPlugin = $prose(() => {
   });
 });
 
-function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef, containerRef, initialCaretRef }: Omit<EditorComponentProps, 'memos' | 'onMemosChange'>) {
+function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef, containerRef }: Omit<EditorComponentProps, 'memos' | 'onMemosChange'>) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -214,15 +211,10 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
       editorViewRef.current = view;
       if (!didInitialFocusRef.current && view && !view.isDestroyed) {
         didInitialFocusRef.current = true;
-        const caret = initialCaretRef?.current;
-        if (caret) {
-          initialCaretRef.current = null;
-          restoreCaret(view, caret);
-        }
         view.focus();
       }
     } catch { /* not ready */ }
-  }, [loading, getInstance, editorViewRef, initialCaretRef]);
+  }, [loading, getInstance, editorViewRef]);
 
   return <Milkdown />;
 }
@@ -285,11 +277,11 @@ function MemoSync({ memos, onMemosChange }: { memos: Memo[]; onMemosChange: (mem
   return null;
 }
 
-export default function EditorComponent({ onChange, initialContent, memosRef, memos, onMemosChange, editorViewRef, containerRef, initialCaretRef }: EditorComponentProps) {
+export default function EditorComponent({ onChange, initialContent, memosRef, memos, onMemosChange, editorViewRef, containerRef }: EditorComponentProps) {
   return (
     <MilkdownProvider>
       <ProsemirrorAdapterProvider>
-        <MilkdownEditor onChange={onChange} initialContent={initialContent} memosRef={memosRef} editorViewRef={editorViewRef} containerRef={containerRef} initialCaretRef={initialCaretRef} />
+        <MilkdownEditor onChange={onChange} initialContent={initialContent} memosRef={memosRef} editorViewRef={editorViewRef} containerRef={containerRef} />
         <MemoSync memos={memos} onMemosChange={onMemosChange} />
       </ProsemirrorAdapterProvider>
     </MilkdownProvider>

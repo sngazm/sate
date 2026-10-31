@@ -1,10 +1,9 @@
 use std::process::Command;
+#[cfg(not(target_os = "macos"))]
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
-mod main_window;
-#[cfg(target_os = "macos")]
-mod visor;
+mod dive;
 
 /// ユーザーが設定した公開コマンドを実行する。
 ///
@@ -95,39 +94,26 @@ pub fn run() {
             run_publish_command,
             reveal_in_finder,
             #[cfg(target_os = "macos")]
-            visor::hide_visor,
+            dive::hide_dive,
             #[cfg(target_os = "macos")]
-            visor::set_visor_shortcut,
+            dive::set_hotkey,
             #[cfg(target_os = "macos")]
-            visor::release_baton,
+            dive::dive_attach,
             #[cfg(target_os = "macos")]
-            visor::baton_ready,
+            dive::dive_ready,
             #[cfg(target_os = "macos")]
-            visor::visor_exit_done,
+            dive::dive_exit_done,
             #[cfg(target_os = "macos")]
-            visor::visor_ready,
-            #[cfg(target_os = "macos")]
-            visor::set_visor_blur,
-            #[cfg(target_os = "macos")]
-            main_window::hide_main_window
+            dive::set_dive_blur
         ])
-        .on_window_event(|window, event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::WindowEvent::Focused(true) = event {
-                main_window::on_focused(window);
-            }
-            #[cfg(not(target_os = "macos"))]
-            let _ = (window, event);
-        })
         .setup(|app| {
-            // Get the main window and set fullscreen
+            // Sate の画面は隠れた状態で作られる。macOS では Dive として、起動・ホットキー・Dock・Cmd+Tab で出す（dive.rs）
+            #[cfg(target_os = "macos")]
+            dive::setup(app.handle())?;
+            #[cfg(not(target_os = "macos"))]
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_fullscreen(true);
+                window.show()?;
             }
-            #[cfg(target_os = "macos")]
-            visor::setup(app.handle())?;
-            #[cfg(target_os = "macos")]
-            main_window::setup(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -135,7 +121,8 @@ pub fn run() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                main_window::reopen(app);
+                // Dock のクリック（Sate がすでに前面のときも来る）
+                dive::show(app);
             }
             #[cfg(not(target_os = "macos"))]
             let _ = (app, event);

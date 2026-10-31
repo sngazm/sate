@@ -5,11 +5,11 @@ import { formatShortcut, isFunctionKey, shortcutFromKeyEvent } from '../lib/shor
 interface ShortcutRecorderProps {
   /** 設定画面で選んでいるホットキー（保存前） */
   value: string;
-  /** いま登録されているホットキー（保存済み）。バイザーがオフなら null */
+  /** いま登録されているホットキー（保存済み）。ホットキーがオフなら null */
   active: string | null;
   /** 「デフォルトに戻す」で戻すホットキー */
   defaultValue: string;
-  /** バイザーがオフのあいだは記録できない */
+  /** ホットキーがオフのあいだは記録できない */
   disabled?: boolean;
   onChange: (shortcut: string) => void;
 }
@@ -20,13 +20,13 @@ export default function ShortcutRecorder({ value, active, defaultValue, disabled
   const [message, setMessage] = useState<string | null>(null);
 
   // 記録中は登録済みのホットキーを外しておく。登録したままだと、同じキーを押したときに
-  // OS 側でバイザーが開閉してしまい、ここにキーが届かない。終わったら保存済みのものに戻す
+  // OS 側で Sate が開閉してしまい、ここにキーが届かない。終わったら保存済みのものに戻す
   // （新しいキーが効くのは「保存」してから）。
   useEffect(() => {
     if (!recording) return;
-    invoke('set_visor_shortcut', { shortcut: null }).catch(console.error);
+    invoke('set_hotkey', { hotkey: null }).catch(console.error);
     return () => {
-      invoke('set_visor_shortcut', { shortcut: active }).catch(console.error);
+      invoke('set_hotkey', { hotkey: active }).catch(console.error);
     };
   }, [recording, active]);
 
@@ -55,7 +55,7 @@ export default function ShortcutRecorder({ value, active, defaultValue, disabled
     }
     // 試しに登録して、Rust 側で読めないキー（JIS の ¥ や かな など）や登録できないキーを弾く
     try {
-      await invoke('set_visor_shortcut', { shortcut });
+      await invoke('set_hotkey', { hotkey: shortcut });
     } catch {
       setMessage(`${formatShortcut(shortcut)} はホットキーにできません`);
       return;

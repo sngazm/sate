@@ -7,8 +7,6 @@ import {
   BaseDirectory,
 } from '@tauri-apps/plugin-fs';
 import { homeDir, join } from '@tauri-apps/api/path';
-import { emitTo } from '@tauri-apps/api/event';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 // Settings are stored in ~/Library/Application Support/club.image.sate/ (macOS)
 // Tauri's AppConfig BaseDirectory maps to the OS-standard config location.
@@ -17,8 +15,8 @@ const CONFIG_FILE = 'settings.json';
 export interface Settings {
   baseDir: string; // Absolute path, e.g. "/Users/foo/Documents/Sate"
   publishCommand?: string; // 公開時に実行するシェルコマンド。未設定なら公開機能は無効。
-  visorEnabled?: boolean; // バイザーを使うか。未設定ならオフ（ホットキーを登録しない）。
-  visorShortcut?: string; // バイザーのホットキー（"Alt+Space" 形式）。未設定なら DEFAULT_VISOR_SHORTCUT。
+  hotkeyEnabled?: boolean; // どのアプリからでもホットキーで Sate を開閉するか。未設定ならオフ（登録しない）。
+  hotkey?: string; // そのホットキー（"Alt+Space" 形式）。未設定なら DEFAULT_HOTKEY。
 }
 
 export function useSettings() {
@@ -41,8 +39,8 @@ export function useSettings() {
             setSettings({
               baseDir: parsed.baseDir,
               publishCommand: parsed.publishCommand,
-              visorEnabled: parsed.visorEnabled,
-              visorShortcut: parsed.visorShortcut,
+              hotkeyEnabled: parsed.hotkeyEnabled,
+              hotkey: parsed.hotkey,
             });
           }
         }
@@ -69,17 +67,6 @@ export function useSettings() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 設定はメイン画面で変え、バイザーには保存したときに知らせる（updateSettings）。
-  // 保存先ディレクトリが食い違ったまま書き込むと、別の場所にファイルができてしまう
-  useEffect(() => {
-    const unlisten = getCurrentWebviewWindow().listen<Settings>('settings-changed', ({ payload }) => {
-      setSettings(payload);
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
-
   const updateSettings = useCallback(async (newSettings: Settings) => {
     setSettings(newSettings);
     try {
@@ -96,7 +83,6 @@ export function useSettings() {
       await writeTextFile(CONFIG_FILE, JSON.stringify(newSettings, null, 2), {
         baseDir: BaseDirectory.AppConfig,
       });
-      await emitTo('visor', 'settings-changed', newSettings);
     } catch (err) {
       console.error('Failed to save settings:', err);
     }

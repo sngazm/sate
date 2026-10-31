@@ -1,4 +1,4 @@
-// バイザーの出入りの演出。src-tauri/src/visor.rs がパネルを出すと visor-enter、隠し始めると visor-exit を送る。
+// Sate の画面（Dive）の出入りの演出。src-tauri/src/dive.rs がパネルを出すと dive-enter、隠し始めると dive-exit を送る。
 // 出るときは「背後の画面がぼける → 塗りつぶされて何も見えなくなる → 本文がぼけた状態からピントが合って出る」、
 // 消えるときはその逆順。
 // 4 つの層をそれぞれ少しずつずらし、expo のイージング（最初に大きく動いて、ゆっくり落ち着く）で動かす。
@@ -39,30 +39,30 @@ let generation = 0;
 
 function apply() {
   const style = document.documentElement.style;
-  style.setProperty('--visor-fill', String(current.fill));
-  style.setProperty('--visor-content', String(current.content));
+  style.setProperty('--dive-fill', String(current.fill));
+  style.setProperty('--dive-content', String(current.content));
   // 本文は、ぼけた影（text-shadow）を薄くしながら、くっきりした文字を濃くして入れ替える。
   // CSS の filter: blur は小さい半径を指定しても一定以上ぼけて描かれ、外す瞬間にカチッと切り替わるので使わない。
   // ピントがほぼ合うまでは、キャレットもぼけた文字の上でくっきり見えないよう隠す
   if (current.focus >= 1) {
-    style.removeProperty('--visor-sharp');
-    style.removeProperty('--visor-text-shadow');
+    style.removeProperty('--dive-sharp');
+    style.removeProperty('--dive-text-shadow');
   } else {
     const radius = MIN_TEXT_BLUR + (1 - current.focus) * (MAX_TEXT_BLUR - MIN_TEXT_BLUR);
-    style.setProperty('--visor-sharp', String(current.focus));
-    style.setProperty('--visor-text-shadow', `0 0 ${radius}px rgb(var(--text-rgb) / ${1 - current.focus})`);
+    style.setProperty('--dive-sharp', String(current.focus));
+    style.setProperty('--dive-text-shadow', `0 0 ${radius}px rgb(var(--text-rgb) / ${1 - current.focus})`);
   }
-  if (current.focus >= CARET_FOCUS) style.removeProperty('--visor-caret');
-  else style.setProperty('--visor-caret', 'transparent');
+  if (current.focus >= CARET_FOCUS) style.removeProperty('--dive-caret');
+  else style.setProperty('--dive-caret', 'transparent');
   const blur = Math.round(current.blur * MAX_BLUR);
   if (blur !== lastBlur) {
     lastBlur = blur;
-    invoke('set_visor_blur', { radius: blur }).catch(() => {});
+    invoke('set_dive_blur', { radius: blur }).catch(() => {});
   }
 }
 
 /** 出る（enter）か消える演出を流す。最後まで流れたら true、途中で次の演出に替わったら false */
-export function playVisorTransition(enter: boolean): Promise<boolean> {
+export function playDiveTransition(enter: boolean): Promise<boolean> {
   // 前の演出は、次のコマで世代が変わったのを見て false で終わる
   const gen = ++generation;
   // パネルを出し直すと macOS 側のぼかしが消えていることがあるので、最初のコマで送り直す
