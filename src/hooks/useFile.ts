@@ -1,11 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  writeTextFile,
   readTextFile,
   readDir,
   mkdir,
   exists,
-  remove,
 } from '@tauri-apps/plugin-fs';
 import {
   type FileMetadata,
@@ -15,6 +13,7 @@ import {
   extractFirstLine,
 } from '../lib/frontmatter';
 import { upsertFile, updateSearchIndex, addSnapshot, deleteFile as deleteFileFromDb } from '../lib/db';
+import { writeVaultFile, removeVaultFile } from '../lib/vaultWrite';
 
 function generateDatePrefix(): string {
   const now = new Date();
@@ -81,14 +80,35 @@ export function useFile(dirPath: string) {
   const memosRef = useRef<Memo[]>(memos);
   const privateRef = useRef(isPrivate);
   const metadataRef = useRef<FileMetadata | null>(null);
+  // ファイルを読み込んだ回数。読み込みが前後したとき、古いほうの結果で上書きしないために使う
+  const loadSeqRef = useRef(0);
 
   fileNameRef.current = fileName;
   contentRef.current = content;
   memosRef.current = memos;
   privateRef.current = isPrivate;
 
+  const applyFile = useCallback((name: string, metadata: FileMetadata | null, body: string) => {
+    loadSeqRef.current += 1;
+    setFileName(name);
+    fileNameRef.current = name;
+    setContent(body);
+    contentRef.current = body;
+    setTitle(metadata?.title ?? null);
+    setMemos(metadata?.memos ?? []);
+    memosRef.current = metadata?.memos ?? [];
+    setIsPrivate(metadata?.private ?? false);
+    privateRef.current = metadata?.private ?? false;
+    setFileId(metadata?.uuid ?? null);
+    metadataRef.current = metadata;
+  }, []);
+
   const initFile = useCallback(async () => {
+    const seq = loadSeqRef.current;
     const name = await getNextFileName(dirPath);
+    // 名前を決めている間に別のファイルを開いていたら、そちらを残す
+    if (seq !== loadSeqRef.current) return;
+    loadSeqRef.current += 1;
     setFileName(name);
     fileNameRef.current = name;
     setContent('');
@@ -105,7 +125,9 @@ export function useFile(dirPath: string) {
     const fileName = fileNameRef.current;
     if (!fileName) return;
     const currentContent = contentRef.current;
-    if (!currentContent && !force) return;
+    // 空の新規は保存しない（空のファイルを作らない）。一度保存したファイルは、全部消したら空で保存する。
+    // そうしないとディスクに消す前の本文が残り、読み直したときに復活する
+    if (!currentContent && !force && !metadataRef.current) return;
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -138,7 +160,7 @@ export function useFile(dirPath: string) {
 
       const fileContent = buildFrontMatter(metadataRef.current) + currentContent;
       const filePath = `${dirPath}/${fileName}`;
-      await writeTextFile(filePath, fileContent);
+      await writeVaultFile(filePath, fileContent);
 
       // --- DB 更新 ---
       // ファイル保存が成功したら、DB側も同期する。
@@ -170,9 +192,11 @@ export function useFile(dirPath: string) {
 
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
       }
 
-      if (newContent) {
+      // 空でも、一度保存したファイルなら保存する（saveFile のコメント参照）
+      if (newContent || metadataRef.current) {
         saveTimerRef.current = setTimeout(() => {
           saveFile();
         }, 1500);
@@ -181,8 +205,8 @@ export function useFile(dirPath: string) {
     [saveFile]
   );
 
-  // 保留中のオートセーブがあれば今すぐ確定させる（ウィンドウを閉じる直前など）。
-  // オートセーブは入力が止まって 1.5 秒後なので、これをしないと直前の入力が消える。
+  // 保留中のオートセーブがあれば今すぐ確定させる。オートセーブは入力が止まって 1.5 秒後なので、
+  // 画面を隠す前などに確定させないと、直前の入力が消える。
   const flushPendingSave = useCallback(async () => {
     if (saveTimerRef.current) {
       await saveFile();
@@ -202,22 +226,12 @@ export function useFile(dirPath: string) {
         const filePath = `${dirPath}/${name}`;
         const text = await readTextFile(filePath);
         const { metadata, body } = parseFrontMatter(text);
-        setFileName(name);
-        fileNameRef.current = name;
-        setContent(body);
-        contentRef.current = body;
-        setTitle(metadata?.title ?? null);
-        setMemos(metadata?.memos ?? []);
-        memosRef.current = metadata?.memos ?? [];
-        setIsPrivate(metadata?.private ?? false);
-        privateRef.current = metadata?.private ?? false;
-        setFileId(metadata?.uuid ?? null);
-        metadataRef.current = metadata;
+        applyFile(name, metadata, body);
       } catch (err) {
         console.error('Failed to open file:', err);
       }
     },
-    [dirPath, saveFile]
+    [dirPath, saveFile, applyFile]
   );
 
   useEffect(() => {
@@ -276,7 +290,7 @@ export function useFile(dirPath: string) {
     try {
       const filePath = `${dirPath}/${fileName}`;
       if (await exists(filePath)) {
-        await remove(filePath);
+        await removeVaultFile(filePath);
       }
       const fileId = metadataRef.current?.uuid;
       if (fileId) {
@@ -350,7 +364,7 @@ export function useFile(dirPath: string) {
         await ensureDir(dirPath);
         const fileContent = buildFrontMatter(restored) + body;
         const filePath = `${dirPath}/${fileName}`;
-        await writeTextFile(filePath, fileContent);
+        await writeVaultFile(filePath, fileContent);
 
         try {
           const createdAt = Math.floor(new Date(restored.createdAt).getTime() / 1000);

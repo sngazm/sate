@@ -18,6 +18,7 @@
 - [shortcuts.md](shortcuts.md) — キーボードショートカット一覧
 - [settings.md](settings.md) — 設定ファイル
 - [startup.md](startup.md) — 起動時の挙動
+- [dive.md](dive.md) — Sate の画面（Dive）の出し入れ — 起動・ホットキー・Dock で画面に重なって出る
 - [style-guide.md](style-guide.md) — スタイルガイド — カラーパレット、アニメーション
 - [roadmap.md](roadmap.md) — 実装フェーズと追加機能の一覧
 

@@ -38,6 +38,31 @@ src-tauri/              # Rust バックエンド
   tauri.conf.json       # Tauri設定
 ```
 
+## Sate の画面（Dive）
+
+Sate の画面は一つだけで、ふだんは隠れている。起動・ホットキー・Dock・`Cmd+Tab` で画面全体に重ねて出し、
+`Esc`・`Cmd+W`・ほかのアプリへの切り替えで隠す（`spec/dive.md`、`src-tauri/src/dive.rs`）。
+コードの中ではこの画面を「Dive」と呼ぶが、画面や環境設定には出さない（利用者には「Sate の画面」）。
+
+- **vault（ユーザーの .md）への書き込みは `src/lib/vaultWrite.ts` を通す。** 書き換える場所を一か所に集めておく
+  （2026-06 のデータ消失の教訓）。`@tauri-apps/plugin-fs` の書き込み系を直接 import すると eslint（`no-restricted-imports`）で
+  エラーになる。例外は `eslint.config.js` に理由付きで列挙している
+- **Rust からのイベントは `getCurrentWebviewWindow().listen` で受ける。**
+- 隠しても Sate は終わらない。ウィンドウはずっと同じ1枚で、閉じる要求が来ても閉じずに隠す
+
+### 実機確認（隔離ビルド）
+
+`npm run tauri dev` はインストール版と同じ identifier なので、同じ `sate.db` と vault を共有してしまう。実機確認は識別子を変えた
+「Sate Dev」で行う（設定・DB は `~/Library/Application Support/club.image.sate.dev/` に分かれる。
+そこの `settings.json` の `baseDir` をテスト用フォルダに向ける）。
+
+```bash
+pnpm tauri build --debug --bundles app --config '{"identifier":"club.image.sate.dev","productName":"Sate Dev"}'
+open "src-tauri/target/debug/bundle/macos/Sate Dev.app"
+```
+
+Sate を開閉するホットキーは本物の Sate とぶつかるので、ホットキーを試すときはどちらか一方だけ起動する。
+
 ## Tauri v2 重要事項
 
 ### ドキュメント

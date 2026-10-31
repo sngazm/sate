@@ -66,8 +66,14 @@
   color: var(--text);
 }
 
-.settings-btn-browse:hover {
+.settings-btn-browse:hover:not(:disabled) {
   background: #4a4a48;
+}
+
+.settings-btn-browse:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.5;
 }
 
 .settings-input {
@@ -89,6 +95,50 @@
 
 .settings-input::placeholder {
   color: var(--text-muted);
+}
+
+.settings-shortcut {
+  flex: 1;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: #1a1a18;
+  border: 1px solid #3a3a38;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.settings-shortcut.disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.settings-shortcut.recording {
+  border-color: var(--accent);
+  color: var(--text-muted);
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'YuGothic', 'Yu Gothic', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.settings-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.settings-error {
+  color: #d97870;
 }
 
 .settings-hint {

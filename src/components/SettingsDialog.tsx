@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { Settings } from '../hooks/useSettings';
+import { DEFAULT_HOTKEY } from '../lib/shortcut';
+import ShortcutRecorder from './ShortcutRecorder';
 import './SettingsDialog.css';
 
 interface SettingsDialogProps {
@@ -18,13 +20,19 @@ export default function SettingsDialog({
 }: SettingsDialogProps) {
   const [baseDir, setBaseDir] = useState(settings.baseDir);
   const [publishCommand, setPublishCommand] = useState(settings.publishCommand ?? '');
+  const savedEnabled = settings.hotkeyEnabled ?? false;
+  const savedHotkey = settings.hotkey ?? DEFAULT_HOTKEY;
+  const [hotkeyEnabled, setHotkeyEnabled] = useState(savedEnabled);
+  const [hotkey, setHotkey] = useState(savedHotkey);
 
   useEffect(() => {
     if (visible) {
       setBaseDir(settings.baseDir);
       setPublishCommand(settings.publishCommand ?? '');
+      setHotkeyEnabled(savedEnabled);
+      setHotkey(savedHotkey);
     }
-  }, [visible, settings.baseDir, settings.publishCommand]);
+  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedHotkey]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -43,7 +51,7 @@ export default function SettingsDialog({
     const trimmed = baseDir.trim();
     if (!trimmed) return;
     const trimmedPublish = publishCommand.trim();
-    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined });
+    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, hotkeyEnabled, hotkey });
     onClose();
   };
 
@@ -77,6 +85,25 @@ export default function SettingsDialog({
           <div className="settings-hint">
             ファイルの保存・読み込みのベースディレクトリ
           </div>
+        </div>
+
+        <div className="settings-field">
+          <label className="settings-label">ホットキー</label>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={hotkeyEnabled}
+              onChange={(e) => setHotkeyEnabled(e.target.checked)}
+            />
+            どのアプリを使っていても、ホットキーで Sate を開閉する
+          </label>
+          <ShortcutRecorder
+            value={hotkey}
+            active={savedEnabled ? savedHotkey : null}
+            defaultValue={DEFAULT_HOTKEY}
+            disabled={!hotkeyEnabled}
+            onChange={setHotkey}
+          />
         </div>
 
         <div className="settings-field">
