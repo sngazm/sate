@@ -2,6 +2,8 @@ use std::process::Command;
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
+mod main_window;
+#[cfg(target_os = "macos")]
 mod visor;
 
 /// ユーザーが設定した公開コマンドを実行する。
@@ -99,8 +101,18 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             visor::release_baton,
             #[cfg(target_os = "macos")]
-            visor::baton_ready
+            visor::baton_ready,
+            #[cfg(target_os = "macos")]
+            main_window::hide_main_window
         ])
+        .on_window_event(|window, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::WindowEvent::Focused(true) = event {
+                main_window::on_focused(window);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (window, event);
+        })
         .setup(|app| {
             // Get the main window and set fullscreen
             if let Some(window) = app.get_webview_window("main") {
@@ -108,21 +120,16 @@ pub fn run() {
             }
             #[cfg(target_os = "macos")]
             visor::setup(app.handle())?;
+            #[cfg(target_os = "macos")]
+            main_window::setup(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // バイザーのパネルが残るので、メインウィンドウを閉じてもアプリは終了しない。
-            // Dock アイコンのクリックでメインウィンドウを作り直す
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                if app.get_webview_window("main").is_none() {
-                    if let Some(config) = app.config().app.windows.first() {
-                        let _ = tauri::WebviewWindowBuilder::from_config(app, config)
-                            .and_then(|builder| builder.build());
-                    }
-                }
+                main_window::reopen(app);
             }
             #[cfg(not(target_os = "macos"))]
             let _ = (app, event);

@@ -146,7 +146,7 @@ fn begin(app: &AppHandle, state: &mut VisorState, next: Phase) {
     state.phase = next;
     state.seq += 1;
     if app.get_webview_window(from).is_none() {
-        // メイン画面が閉じられている。保存は閉じるときに済んでいる
+        // メイン画面が無い（Cmd+W でも壊さないので普通は起きない）。最後に受け渡したバトンを渡す
         let baton = state.last.clone();
         finish(app, state, baton);
         return;
@@ -196,7 +196,6 @@ fn finish(app: &AppHandle, state: &mut VisorState, baton: Value) {
 }
 
 /// 手放す側が保存を確定させて保存を止めたら呼ぶ（`baton-release` への返事）。
-/// メイン画面を閉じるときにも呼び、次に開いたメイン画面がそのファイルを開けるようにする。
 #[tauri::command]
 pub fn release_baton(app: AppHandle, window: WebviewWindow, baton: Value) {
     let mutex = app.state::<Mutex<VisorState>>();
@@ -211,9 +210,9 @@ pub fn release_baton(app: AppHandle, window: WebviewWindow, baton: Value) {
     }
 }
 
-/// 画面の JS が受け渡しのイベントを聞けるようになったら呼ぶ。
+/// 画面の JS が受け渡しのイベントを聞けるようになったら呼ぶ（起動時。聞き始める前に送られたイベントは届かない）。
 /// この画面がバトンを持っていれば最後に受け渡したバトンを返し、持っていなければ `None`。
-/// バイザーが出ているときにメイン画面が作られた（Dock から開き直した）なら、バイザーを隠して渡す。
+/// バイザーが出ているときにメイン画面が作られた（無くなったメイン画面を作り直した）なら、バイザーを隠して渡す。
 #[tauri::command]
 pub fn baton_ready(app: AppHandle, window: WebviewWindow) -> Option<Value> {
     let mutex = app.state::<Mutex<VisorState>>();

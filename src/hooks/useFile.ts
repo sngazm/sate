@@ -203,20 +203,25 @@ export function useFile(dirPath: string) {
     [saveFile]
   );
 
-  // バトンを手放す（バイザーを出す・隠すとき、ウィンドウを閉じる直前）。
-  // 保留中のオートセーブを今すぐ確定させてから保存を止める。オートセーブは入力が止まって
-  // 1.5 秒後なので、確定させないと直前の入力が消える。戻り値は開いているファイル名。
-  const releaseFile = useCallback(async () => {
+  // 保留中のオートセーブがあれば今すぐ確定させる。オートセーブは入力が止まって 1.5 秒後なので、
+  // 画面を隠したり手放したりする前に確定させないと、直前の入力が消える。
+  const flushPendingSave = useCallback(async () => {
     if (saveTimerRef.current) {
       await saveFile();
     }
+  }, [saveFile]);
+
+  // バトンを手放す（バイザーを出す・隠すとき）。保存を確定させてから保存を止める。
+  // 戻り値は開いているファイル名。
+  const releaseFile = useCallback(async () => {
+    await flushPendingSave();
     setWritable(false);
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
     return fileNameRef.current;
-  }, [saveFile]);
+  }, [flushPendingSave]);
 
   // バトンを受け取る。相手は保存を確定させてから手放すので、ディスクの内容がいちばん新しい。
   // 手元と同じ内容なら読み直さない（エディタを作り直すと取り消し履歴が消えるため）。
@@ -437,6 +442,7 @@ export function useFile(dirPath: string) {
     updatePrivate,
     openFile,
     saveFile,
+    flushPendingSave,
     releaseFile,
     acquireFile,
     initFile,

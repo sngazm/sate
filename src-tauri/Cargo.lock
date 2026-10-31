@@ -3369,7 +3369,9 @@ dependencies = [
 name = "sate"
 version = "0.1.1"
 dependencies = [
+ "block2",
  "objc2-app-kit",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tauri",

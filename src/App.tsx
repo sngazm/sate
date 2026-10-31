@@ -50,6 +50,7 @@ function App({ visor = false }: AppProps) {
     updateMemos,
     updatePrivate,
     saveFile,
+    flushPendingSave,
     releaseFile,
     acquireFile,
     openFile,
@@ -358,7 +359,7 @@ function App({ visor = false }: AppProps) {
     }));
     const unlistenAcquire = win.listen<Baton>('baton-acquire', ({ payload }) =>
       enqueue(() => batonHandlersRef.current.acquireBaton(payload)));
-    // 聞き始めたら、バトンがこの画面にあるか確かめる（起動時、Dock からメイン画面を開き直したとき）
+    // 聞き始めたら、バトンがこの画面にあるか確かめる（起動時など。聞き始める前に送られたイベントは届かない）
     Promise.all([unlistenRelease, unlistenAcquire]).then(() => enqueue(async () => {
       const baton = await invoke<Baton | null>('baton_ready').catch((): Baton => {
         // バイザーの無い環境（macOS 以外）。メイン画面がずっと持つ
@@ -372,6 +373,10 @@ function App({ visor = false }: AppProps) {
     };
   }, [loaded]);
 
+  // Cmd+W で隠す前にフォーカスがあった要素。全画面の解除と再開をはさむと、WebKit がフォーカスを
+  // 先頭の入力欄（タイトル）へ移してしまうので、メイン画面が戻ってきたらここへ戻す
+  const refocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
       if (visor) {
@@ -380,22 +385,34 @@ function App({ visor = false }: AppProps) {
         invoke('hide_visor');
         return;
       }
-      // Cmd+W などでメイン画面を閉じる前に、保留中のオートセーブを確定させる。
-      // 開いていたファイルは、次に開いたメイン画面やバイザーが引き継ぐ
-      const baton = await releaseBaton();
-      await invoke('release_baton', { baton }).catch(() => {});
+      // メイン画面も Cmd+W では閉じずに、全画面を解除してから Sate ごと隠す。Dock や Cmd+Tab で
+      // 元の全画面に戻る（src-tauri/src/main_window.rs。壊さない理由もそこに書いてある）
+      event.preventDefault();
+      refocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      await flushPendingSave();
+      await invoke('hide_main_window').catch(() => getCurrentWindow().destroy());
     });
     return () => {
       unlisten.then((f) => f());
     };
-  }, [visor, releaseBaton]);
+  }, [visor, flushPendingSave]);
 
-  // バイザーが出ているあいだにメイン画面を触ったら（別のディスプレイなど）、バイザーを隠して
-  // バトンを戻す。そうしないと、古い内容のメイン画面で書いたものが保存されない
   useEffect(() => {
     if (visor) return;
     const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (focused) invoke('hide_visor').catch(() => {});
+      if (!focused) return;
+      // バイザーが出ているあいだにメイン画面を触ったら（別のディスプレイなど）、バイザーを隠して
+      // バトンを戻す。そうしないと、古い内容のメイン画面で書いたものが保存されない
+      invoke('hide_visor').catch(() => {});
+      const el = refocusRef.current;
+      if (!el) return;
+      refocusRef.current = null;
+      setTimeout(() => {
+        const view = editorViewRef.current;
+        // 本文なら ProseMirror の focus で、選択範囲ごと戻す
+        if (view && !view.isDestroyed && view.dom.contains(el)) view.focus();
+        else if (el.isConnected) el.focus();
+      }, 50);
     });
     return () => {
       unlisten.then((f) => f());

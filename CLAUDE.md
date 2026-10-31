@@ -52,6 +52,7 @@ src-tauri/              # Rust バックエンド
 - **Rust からのイベントは `getCurrentWebviewWindow().listen` で受ける。** `@tauri-apps/api/event` の `listen` は、
   ほかのウィンドウ宛て（`emit_to`）のイベントまで受けてしまう
 - 画面のあいだで引き継ぐのはファイルの中身とキャレット位置だけ。取り消し履歴・Rewind・検索・スクロール位置は画面ごとに別
+- メイン画面は `Cmd+W` でも壊さず、全画面を解除して画面から外し、Sate ごと隠す（`src-tauri/src/main_window.rs`）。起動中、メイン画面のウィンドウはずっと同じ1枚
 
 ### 実機確認（隔離ビルド）
 
