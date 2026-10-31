@@ -34,6 +34,7 @@ Sate の画面は一つだけで、ふだんは隠れている。呼び出すと
 - ウィンドウは tauri.conf.json の `main`（隠れた状態・枠なし・透明で作る）を NSPanel に変換し（tauri-nspanel）、
   fullScreenAuxiliary + canJoinAllSpaces にする。ほかのアプリの全画面スペースの上にも出せる。
   Sate を前面にしても、そのスペースからデスクトップへ追い出されない（実機で確認済み）
+- ウィンドウの影は切る（`tauri.conf.json` の `shadow: false`）。枠の無いウィンドウでも macOS は影を付け、画面の端に 1px の明るい線が出る
 - ウィンドウレベルは Status（25）。メニューバー（24）と常時表示の Dock（20）より上に出て、画面全体を覆う。
   IME の変換候補の窓はさらに上に出る（実機で確認済み）
 - 出すとき・隠すときに前面にするアプリ：ほかのアプリが前面に来るたび（`NSWorkspaceDidActivateApplicationNotification`）と
