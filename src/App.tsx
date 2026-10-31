@@ -471,8 +471,10 @@ function App({ visor = false }: AppProps) {
   useEffect(() => {
     if (!visor) return;
     const win = getCurrentWebviewWindow();
-    const unlistenEnter = win.listen('visor-enter', () => {
+    const unlistenEnter = win.listen<number>('visor-enter', ({ payload: seq }) => {
       playVisorTransition(true);
+      // 2 回目の requestAnimationFrame の時点で 1 コマは描けている。それまでパネルは透明（visor.rs の visor_ready）
+      requestAnimationFrame(() => requestAnimationFrame(() => invoke('visor_ready', { seq }).catch(() => {})));
     });
     const unlistenExit = win.listen<number>('visor-exit', ({ payload: seq }) => {
       playVisorTransition(false).then((done) => {

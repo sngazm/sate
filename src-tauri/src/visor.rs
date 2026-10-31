@@ -37,6 +37,8 @@ const MAIN: &str = "main";
 
 /// 消える演出が終わったという知らせが来なくても、この時間が過ぎたら画面から外す（演出は 1 秒）
 const EXIT_TIMEOUT: Duration = Duration::from_millis(1500);
+/// 画面が描けたという知らせ（visor_ready）が来なくても、この時間が過ぎたら見せる
+const READY_TIMEOUT: Duration = Duration::from_millis(300);
 /// メイン画面がバトンを手放さないとき、バイザーを出すのをあきらめるまでの時間
 const SHOW_TIMEOUT: Duration = Duration::from_secs(1);
 /// バイザーがバトンを手放さないとき、待たずに隠すまでの時間（隠せないと画面がふさがったままになる）
@@ -248,6 +250,9 @@ fn finish(app: &AppHandle, state: &mut VisorState, baton: Value) {
             let _ = handle.emit_to(LABEL, "baton-acquire", baton);
             cover_cursor_screen(&handle);
             window.setIgnoresMouseEvents(false);
+            // 隠れているあいだ（ほかのアプリを使っているときなど）WebKit は描くのを止めていて、出した最初の 1 コマが
+            // 灰色になる。画面の JS が 1 コマ描いたと知らせてくる（visor_ready）まで透明にしておく
+            window.setAlphaValue(0.0);
             // 消える演出の途中（パネルが出たまま）だと、キーにしてもキー入力を受け取れない
             // （Sate を前面にしないパネルは、画面に出るときにだけキー入力を受け取る）。いったん外してから出し直す。
             // 出し直すまでの一瞬は背後の画面がそのまま見えるが、入力できないよりよい
@@ -260,7 +265,13 @@ fn finish(app: &AppHandle, state: &mut VisorState, baton: Value) {
                 // 画面から外すと macOS 側のぼかしが消えるので、画面の JS を待たずにすぐ戻す
                 apply_blur(window, BLUR_RADIUS.load(Ordering::SeqCst));
             }
-            let _ = handle.emit_to(LABEL, "visor-enter", ());
+            let _ = handle.emit_to(LABEL, "visor-enter", seq);
+            // 描けたという知らせが来なかったときの保険
+            let app = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(READY_TIMEOUT);
+                reveal(&app, seq);
+            });
         } else {
             // 消える演出のあいだも、クリックとキー入力はすぐ元のアプリへ返す
             window.setIgnoresMouseEvents(true);
@@ -296,6 +307,30 @@ fn return_keyboard(app: &AppHandle) {
             let _ = main.set_focus();
         }
     }
+}
+
+/// 出したパネルを画面の JS が 1 コマ描いたら呼ぶ（`visor-enter` への返事）。透明にしていたパネルを見せる
+#[tauri::command]
+pub fn visor_ready(app: AppHandle, seq: u64) {
+    reveal(&app, seq);
+}
+
+fn reveal(app: &AppHandle, seq: u64) {
+    {
+        let mutex = app.state::<Mutex<VisorState>>();
+        let state = mutex.lock().unwrap();
+        // そのあと受け渡しが進んだ（隠した、出し直した）なら、そちらに任せる
+        if state.seq != seq || state.phase != Phase::Shown {
+            return;
+        }
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(panel) = handle.get_webview_panel(LABEL) {
+            let window: &objc2_app_kit::NSWindow = panel.as_panel();
+            window.setAlphaValue(1.0);
+        }
+    });
 }
 
 /// 消える演出が終わったら呼ぶ（`visor-exit` への返事）。そのあと出し直していなければ、パネルを画面から外す
