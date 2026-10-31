@@ -127,7 +127,9 @@ export function useFile(dirPath: string) {
     const fileName = fileNameRef.current;
     if (!fileName) return;
     const currentContent = contentRef.current;
-    if (!currentContent && !force) return;
+    // 空の新規は保存しない（空のファイルを作らない）。一度保存したファイルは、全部消したら空で保存する。
+    // そうしないとディスクに消す前の本文が残り、読み直したとき（バイザーとの受け渡しなど）に復活する
+    if (!currentContent && !force && !metadataRef.current) return;
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -192,9 +194,11 @@ export function useFile(dirPath: string) {
 
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
       }
 
-      if (newContent) {
+      // 空でも、一度保存したファイルなら保存する（saveFile のコメント参照）
+      if (newContent || metadataRef.current) {
         saveTimerRef.current = setTimeout(() => {
           saveFile();
         }, 1500);
