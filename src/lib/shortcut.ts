@@ -1,6 +1,9 @@
-// バイザーのホットキーは、Rust 側（global-hotkey）がそのまま読める "Cmd+F12" 形式の文字列で持つ。
+// バイザーのホットキーは、Rust 側（global-hotkey）がそのまま読める "Alt+Space" 形式の文字列で持つ。
 // 修飾キーは Ctrl / Alt / Shift / Cmd、キーは KeyboardEvent.code の名前（KeyA, Digit1, F12, Space など）。
 
+// バイザーは環境設定でオンにしたときだけホットキーを登録する（初期値はオフ）。macOS のホットキーは
+// 他のアプリと取り合いになっても登録が失敗しないので、勝手に登録すると他のアプリのショートカットや
+// ⌥Space の入力を黙って奪ってしまう。
 export const DEFAULT_VISOR_SHORTCUT = 'Alt+Space';
 
 const MODIFIER_CODES = new Set([

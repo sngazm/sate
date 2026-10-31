@@ -5,13 +5,17 @@ import { formatShortcut, isFunctionKey, shortcutFromKeyEvent } from '../lib/shor
 interface ShortcutRecorderProps {
   /** 設定画面で選んでいるホットキー（保存前） */
   value: string;
-  /** いま登録されているホットキー（保存済み） */
-  active: string;
+  /** いま登録されているホットキー（保存済み）。バイザーがオフなら null */
+  active: string | null;
+  /** 「デフォルトに戻す」で戻すホットキー */
+  defaultValue: string;
+  /** バイザーがオフのあいだは記録できない */
+  disabled?: boolean;
   onChange: (shortcut: string) => void;
 }
 
 /** クリックしてからキーを押すと、そのキーの組み合わせをホットキーとして記録する */
-export default function ShortcutRecorder({ value, active, onChange }: ShortcutRecorderProps) {
+export default function ShortcutRecorder({ value, active, defaultValue, disabled = false, onChange }: ShortcutRecorderProps) {
   const [recording, setRecording] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -28,7 +32,7 @@ export default function ShortcutRecorder({ value, active, onChange }: ShortcutRe
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (!recording) {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault();
         setRecording(true);
         setMessage(null);
@@ -63,18 +67,32 @@ export default function ShortcutRecorder({ value, active, onChange }: ShortcutRe
 
   return (
     <>
-      <div
-        className={`settings-shortcut${recording ? ' recording' : ''}`}
-        role="button"
-        tabIndex={0}
-        onClick={() => {
-          setRecording(true);
-          setMessage(null);
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={() => setRecording(false)}
-      >
-        {recording ? 'キーを押してください（Esc で取り消し）' : formatShortcut(value)}
+      <div className="settings-dir-row">
+        <div
+          className={`settings-shortcut${recording ? ' recording' : ''}${disabled ? ' disabled' : ''}`}
+          role="button"
+          tabIndex={disabled ? -1 : 0}
+          aria-disabled={disabled}
+          onClick={() => {
+            if (disabled) return;
+            setRecording(true);
+            setMessage(null);
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={() => setRecording(false)}
+        >
+          {recording ? 'キーを押してください（Esc で取り消し）' : formatShortcut(value)}
+        </div>
+        <button
+          className="settings-btn settings-btn-browse"
+          disabled={disabled || value === defaultValue}
+          onClick={() => {
+            setMessage(null);
+            onChange(defaultValue);
+          }}
+        >
+          デフォルトに戻す
+        </button>
       </div>
       {message && <div className="settings-hint settings-error">{message}</div>}
     </>

@@ -20,16 +20,19 @@ export default function SettingsDialog({
 }: SettingsDialogProps) {
   const [baseDir, setBaseDir] = useState(settings.baseDir);
   const [publishCommand, setPublishCommand] = useState(settings.publishCommand ?? '');
-  const activeShortcut = settings.visorShortcut ?? DEFAULT_VISOR_SHORTCUT;
-  const [visorShortcut, setVisorShortcut] = useState(activeShortcut);
+  const savedEnabled = settings.visorEnabled ?? false;
+  const savedShortcut = settings.visorShortcut ?? DEFAULT_VISOR_SHORTCUT;
+  const [visorEnabled, setVisorEnabled] = useState(savedEnabled);
+  const [visorShortcut, setVisorShortcut] = useState(savedShortcut);
 
   useEffect(() => {
     if (visible) {
       setBaseDir(settings.baseDir);
       setPublishCommand(settings.publishCommand ?? '');
-      setVisorShortcut(activeShortcut);
+      setVisorEnabled(savedEnabled);
+      setVisorShortcut(savedShortcut);
     }
-  }, [visible, settings.baseDir, settings.publishCommand, activeShortcut]);
+  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedShortcut]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -48,7 +51,7 @@ export default function SettingsDialog({
     const trimmed = baseDir.trim();
     if (!trimmed) return;
     const trimmedPublish = publishCommand.trim();
-    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, visorShortcut });
+    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, visorEnabled, visorShortcut });
     onClose();
   };
 
@@ -85,6 +88,25 @@ export default function SettingsDialog({
         </div>
 
         <div className="settings-field">
+          <label className="settings-label">バイザー</label>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={visorEnabled}
+              onChange={(e) => setVisorEnabled(e.target.checked)}
+            />
+            ホットキーでバイザーを開閉する
+          </label>
+          <ShortcutRecorder
+            value={visorShortcut}
+            active={savedEnabled ? savedShortcut : null}
+            defaultValue={DEFAULT_VISOR_SHORTCUT}
+            disabled={!visorEnabled}
+            onChange={setVisorShortcut}
+          />
+        </div>
+
+        <div className="settings-field">
           <label className="settings-label">公開コマンド</label>
           <input
             type="text"
@@ -99,14 +121,6 @@ export default function SettingsDialog({
           <div className="settings-hint">
             「公開」で実行するシェルコマンド。公開用 md のパスを $SATE_FILE、ファイル名を $SATE_SLUG、
             タイトルを $SATE_TITLE で受け取る。空欄なら公開機能は無効。
-          </div>
-        </div>
-
-        <div className="settings-field">
-          <label className="settings-label">バイザーのホットキー</label>
-          <ShortcutRecorder value={visorShortcut} active={activeShortcut} onChange={setVisorShortcut} />
-          <div className="settings-hint">
-            クリックしてから、設定したいキーの組み合わせを押す。どのアプリを使っていても、このキーでバイザーを開閉する。
           </div>
         </div>
 

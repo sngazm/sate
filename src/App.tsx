@@ -419,9 +419,9 @@ function App({ visor = false }: AppProps) {
     };
   }, [visor]);
 
-  // バイザーのホットキーを登録する（設定が変わったら登録し直す）。
+  // バイザーのホットキーを登録する（設定が変わったら登録し直す）。バイザーがオフなら外す（src/lib/shortcut.ts）。
   // 登録は Rust 側に残るので、メイン画面を閉じてもホットキーは効き続ける。
-  const visorShortcut = settings?.visorShortcut ?? DEFAULT_VISOR_SHORTCUT;
+  const visorShortcut = settings?.visorEnabled ? (settings.visorShortcut ?? DEFAULT_VISOR_SHORTCUT) : null;
   useEffect(() => {
     if (!loaded || visor) return;
     invoke('set_visor_shortcut', { shortcut: visorShortcut }).catch((err) =>
