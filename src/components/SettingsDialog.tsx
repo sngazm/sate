@@ -95,7 +95,7 @@ export default function SettingsDialog({
               checked={hotkeyEnabled}
               onChange={(e) => setHotkeyEnabled(e.target.checked)}
             />
-            どのアプリを使っていても、ホットキーで Sate を開閉する
+            ホットキーで Sate を開閉する
           </label>
           <ShortcutRecorder
             value={hotkey}
