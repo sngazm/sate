@@ -13,7 +13,8 @@ const ENTER: Record<Layer, Track> = {
   blur: { delay: 0, duration: 1 },
   fill: { delay: 0.2, duration: 0.8 },
   content: { delay: 0.35, duration: 0.65 },
-  focus: { delay: 0.45, duration: 0.55 },
+  // 本文のピントはゆっくり合わせて余韻を残す（expo なので、0.6 秒ほどでぼけはほとんど見えなくなる）
+  focus: { delay: 0.45, duration: 1.8 },
 };
 const EXIT: Record<Layer, Track> = {
   focus: { delay: 0, duration: 0.35 },
@@ -26,6 +27,8 @@ const MAX_BLUR = 30;
 /** 本文がいちばんぼけているとき（focus が 0）と、ピントが合う直前の、ぼけた影の半径（px） */
 const MAX_TEXT_BLUR = 12;
 const MIN_TEXT_BLUR = 2;
+/** ピントがここまで合ったらキャレットを出す（合い切るまで待つと、出してから 2 秒以上キャレットが見えない） */
+const CARET_FOCUS = 0.9;
 
 const easeOutExpo = (t: number) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t));
 
@@ -40,17 +43,17 @@ function apply() {
   style.setProperty('--visor-content', String(current.content));
   // 本文は、ぼけた影（text-shadow）を薄くしながら、くっきりした文字を濃くして入れ替える。
   // CSS の filter: blur は小さい半径を指定しても一定以上ぼけて描かれ、外す瞬間にカチッと切り替わるので使わない。
-  // ピントが合い切るまでは、キャレットもぼけた文字の上でくっきり見えないよう隠す
+  // ピントがほぼ合うまでは、キャレットもぼけた文字の上でくっきり見えないよう隠す
   if (current.focus >= 1) {
     style.removeProperty('--visor-sharp');
     style.removeProperty('--visor-text-shadow');
-    style.removeProperty('--visor-caret');
   } else {
     const radius = MIN_TEXT_BLUR + (1 - current.focus) * (MAX_TEXT_BLUR - MIN_TEXT_BLUR);
     style.setProperty('--visor-sharp', String(current.focus));
     style.setProperty('--visor-text-shadow', `0 0 ${radius}px rgb(var(--text-rgb) / ${1 - current.focus})`);
-    style.setProperty('--visor-caret', 'transparent');
   }
+  if (current.focus >= CARET_FOCUS) style.removeProperty('--visor-caret');
+  else style.setProperty('--visor-caret', 'transparent');
   const blur = Math.round(current.blur * MAX_BLUR);
   if (blur !== lastBlur) {
     lastBlur = blur;
