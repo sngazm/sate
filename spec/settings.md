@@ -6,7 +6,8 @@
 ```jsonc
 {
   "baseDir": "/Users/foo/Documents/Sate",       // ユーザーファイル（.md）の保存先
-  "publishCommand": "~/my-site/publish.sh"      // 公開コマンド（省略時は公開機能無効）
+  "publishCommand": "~/my-site/publish.sh",     // 公開コマンド（省略時は公開機能無効）
+  "visorShortcut": "Alt+Space"                  // バイザーのホットキー（省略時は Alt+Space = ⌥Space）
 }
 ```
 

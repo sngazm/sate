@@ -18,6 +18,7 @@
 - [shortcuts.md](shortcuts.md) — キーボードショートカット一覧
 - [settings.md](settings.md) — 設定ファイル
 - [startup.md](startup.md) — 起動時の挙動
+- [visor.md](visor.md) — バイザーモード（試作）— ホットキーで画面に重なるエディタ
 - [style-guide.md](style-guide.md) — スタイルガイド — カラーパレット、アニメーション
 - [roadmap.md](roadmap.md) — 実装フェーズと追加機能の一覧
 

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { Settings } from '../hooks/useSettings';
+import { DEFAULT_VISOR_SHORTCUT } from '../lib/shortcut';
+import ShortcutRecorder from './ShortcutRecorder';
 import './SettingsDialog.css';
 
 interface SettingsDialogProps {
@@ -18,13 +20,16 @@ export default function SettingsDialog({
 }: SettingsDialogProps) {
   const [baseDir, setBaseDir] = useState(settings.baseDir);
   const [publishCommand, setPublishCommand] = useState(settings.publishCommand ?? '');
+  const activeShortcut = settings.visorShortcut ?? DEFAULT_VISOR_SHORTCUT;
+  const [visorShortcut, setVisorShortcut] = useState(activeShortcut);
 
   useEffect(() => {
     if (visible) {
       setBaseDir(settings.baseDir);
       setPublishCommand(settings.publishCommand ?? '');
+      setVisorShortcut(activeShortcut);
     }
-  }, [visible, settings.baseDir, settings.publishCommand]);
+  }, [visible, settings.baseDir, settings.publishCommand, activeShortcut]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -43,7 +48,7 @@ export default function SettingsDialog({
     const trimmed = baseDir.trim();
     if (!trimmed) return;
     const trimmedPublish = publishCommand.trim();
-    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined });
+    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, visorShortcut });
     onClose();
   };
 
@@ -94,6 +99,14 @@ export default function SettingsDialog({
           <div className="settings-hint">
             「公開」で実行するシェルコマンド。公開用 md のパスを $SATE_FILE、ファイル名を $SATE_SLUG、
             タイトルを $SATE_TITLE で受け取る。空欄なら公開機能は無効。
+          </div>
+        </div>
+
+        <div className="settings-field">
+          <label className="settings-label">バイザーのホットキー</label>
+          <ShortcutRecorder value={visorShortcut} active={activeShortcut} onChange={setVisorShortcut} />
+          <div className="settings-hint">
+            クリックしてから、設定したいキーの組み合わせを押す。どのアプリを使っていても、このキーでバイザーを開閉する。
           </div>
         </div>
 

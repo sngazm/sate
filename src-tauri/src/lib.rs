@@ -1,6 +1,9 @@
 use std::process::Command;
 use tauri::Manager;
 
+#[cfg(target_os = "macos")]
+mod visor;
+
 /// ユーザーが設定した公開コマンドを実行する。
 ///
 /// Sate 側は「公開用 md を一時ファイルに書き出してコマンドに渡す」までを担い、
@@ -77,18 +80,51 @@ async fn run_publish_command(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sql::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![run_publish_command, reveal_in_finder])
+        .plugin(tauri_plugin_sql::Builder::default().build());
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .plugin(tauri_nspanel::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    builder
+        .invoke_handler(tauri::generate_handler![
+            run_publish_command,
+            reveal_in_finder,
+            #[cfg(target_os = "macos")]
+            visor::hide_visor,
+            #[cfg(target_os = "macos")]
+            visor::set_visor_shortcut,
+            #[cfg(target_os = "macos")]
+            visor::release_baton,
+            #[cfg(target_os = "macos")]
+            visor::baton_ready
+        ])
         .setup(|app| {
             // Get the main window and set fullscreen
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_fullscreen(true);
             }
+            #[cfg(target_os = "macos")]
+            visor::setup(app.handle())?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // バイザーのパネルが残るので、メインウィンドウを閉じてもアプリは終了しない。
+            // Dock アイコンのクリックでメインウィンドウを作り直す
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if app.get_webview_window("main").is_none() {
+                    if let Some(config) = app.config().app.windows.first() {
+                        let _ = tauri::WebviewWindowBuilder::from_config(app, config)
+                            .and_then(|builder| builder.build());
+                    }
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

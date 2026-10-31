@@ -91,6 +91,27 @@
   color: var(--text-muted);
 }
 
+.settings-shortcut {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: #1a1a18;
+  border: 1px solid #3a3a38;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.settings-shortcut.recording {
+  border-color: var(--accent);
+  color: var(--text-muted);
+}
+
+.settings-error {
+  color: #d97870;
+}
+
 .settings-hint {
   font-family: 'YuGothic', 'Yu Gothic', sans-serif;
   font-size: 11px;

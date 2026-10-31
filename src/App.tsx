@@ -20,13 +20,22 @@ import { parseFrontMatter, type Memo } from './lib/frontmatter';
 import { diffLinesRich, cleanMarkdownForDisplay, type RichDiffLine } from './lib/diff';
 import { Selection } from '@milkdown/prose/state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { invoke } from '@tauri-apps/api/core';
+import { DEFAULT_VISOR_SHORTCUT } from './lib/shortcut';
+import { caretOf, restoreCaret, type Baton, type Caret } from './lib/baton';
 import './App.css';
 
 // 1ステップ進める/戻すために必要なホイール累積量。trackpad の小刻みなイベントを
 // 1スナップショット移動にまとめるための閾値。
 const SCROLL_STEP_THRESHOLD = 50;
 
-function App() {
+interface AppProps {
+  /** バイザー（src-tauri/src/visor.rs のパネル）として動かす。メイン画面と同じファイルを開く */
+  visor?: boolean;
+}
+
+function App({ visor = false }: AppProps) {
   const { settings, loaded, updateSettings } = useSettings();
   const {
     fileName,
@@ -41,7 +50,8 @@ function App() {
     updateMemos,
     updatePrivate,
     saveFile,
-    flushPendingSave,
+    releaseFile,
+    acquireFile,
     openFile,
     initFile,
     deleteCurrentFile,
@@ -278,17 +288,21 @@ function App() {
         stepSearch(editorViewRef.current, e.shiftKey ? -1 : 1);
       }
       if (e.metaKey && e.key === '/') { e.preventDefault(); setShowShortcuts((v) => !v); }
-      if (e.metaKey && e.key === ',') { e.preventDefault(); setShowSettings((v) => !v); }
+      // 設定はメイン画面だけで変える（バイザーで変えるとメイン画面の設定が古いまま残る）
+      if (e.metaKey && e.key === ',' && !visor) { e.preventDefault(); setShowSettings((v) => !v); }
       if (e.key === 'Escape') {
         if (showSettings) { e.preventDefault(); setShowSettings(false); }
         else if (showShortcuts) { e.preventDefault(); setShowShortcuts(false); }
         else if (showFileOpen) { e.preventDefault(); setShowFileOpen(false); }
         else if (findRequest) { e.preventDefault(); setFindRequest(null); }
+        // バイザーは Esc で隠す。IME の変換を取り消す Esc は除く。WebKit は compositionend を
+        // 先に投げるので、その Esc の isComposing は false になっている。IME が処理したキーは keyCode が 229
+        else if (visor && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); invoke('hide_visor'); }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
+  }, [visor, showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
 
   // ファイルが切り替わったら（新規含め）Rewind と文書内検索は強制終了
   useEffect(() => {
@@ -296,22 +310,115 @@ function App() {
     setFindRequest(null);
   }, [fileName, exitRewind]);
 
-  // Cmd+W などでウィンドウを閉じる前に、保留中のオートセーブを確定させる
+  // ---- バイザーとのバトンの受け渡し（src-tauri/src/visor.rs） ----
+  // 保存してよいのはバトンを持っている画面だけ。手放す側は保存を確定させてからファイル名と
+  // キャレット位置を渡し、受け取る側はファイルを読み直してキャレットを置き直す。
+  const pendingCaretRef = useRef<Caret | null>(null);
+
+  const releaseBaton = useCallback(async (): Promise<Baton> => {
+    const view = editorViewRef.current;
+    const caret = view && !view.isDestroyed
+      ? { anchor: view.state.selection.anchor, head: view.state.selection.head }
+      : {};
+    return { file: await releaseFile(), ...caret };
+  }, [releaseFile]);
+
+  const acquireBaton = useCallback(async (baton: Baton) => {
+    if (visor && settings) {
+      // バイザーは起動時にはデータベースを開かない（メイン画面と同時に初期化するとぶつかる）
+      await initDatabase(settings.baseDir).catch((err) => console.error('Failed to init DB:', err));
+    }
+    const caret = caretOf(baton);
+    pendingCaretRef.current = caret;
+    // 読み直したときは、作り直したエディタがマウント時に pendingCaretRef を使う
+    if (await acquireFile(baton.file)) return;
+    pendingCaretRef.current = null;
+    const view = editorViewRef.current;
+    if (!view || view.isDestroyed) return;
+    if (caret) restoreCaret(view, caret);
+    view.focus();
+  }, [visor, settings, acquireFile]);
+
+  const batonHandlersRef = useRef({ releaseBaton, acquireBaton });
+  batonHandlersRef.current = { releaseBaton, acquireBaton };
+
   useEffect(() => {
-    const unlisten = getCurrentWindow().onCloseRequested(async () => {
-      await flushPendingSave();
+    if (!loaded) return;
+    // 受け取りの読み込み中に手放す指示が来ても、受け取り終わってから手放すよう順に処理する
+    let queue = Promise.resolve();
+    const enqueue = (op: () => Promise<void>) => {
+      queue = queue.then(op).catch((err) => console.error('Baton handoff failed:', err));
+    };
+    // emit_to で送られたイベントだけを受けるため、ウィンドウの listen を使う
+    // （@tauri-apps/api/event の listen は、ほかのウィンドウ宛てのイベントまで受けてしまう）
+    const win = getCurrentWebviewWindow();
+    const unlistenRelease = win.listen('baton-release', () => enqueue(async () => {
+      const baton = await batonHandlersRef.current.releaseBaton();
+      await invoke('release_baton', { baton });
+    }));
+    const unlistenAcquire = win.listen<Baton>('baton-acquire', ({ payload }) =>
+      enqueue(() => batonHandlersRef.current.acquireBaton(payload)));
+    // 聞き始めたら、バトンがこの画面にあるか確かめる（起動時、Dock からメイン画面を開き直したとき）
+    Promise.all([unlistenRelease, unlistenAcquire]).then(() => enqueue(async () => {
+      const baton = await invoke<Baton | null>('baton_ready').catch((): Baton => {
+        // バイザーの無い環境（macOS 以外）。メイン画面がずっと持つ
+        return { file: null };
+      });
+      if (baton) await batonHandlersRef.current.acquireBaton(baton);
+    }));
+    return () => {
+      unlistenRelease.then((f) => f());
+      unlistenAcquire.then((f) => f());
+    };
+  }, [loaded]);
+
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
+      if (visor) {
+        // バイザーは閉じずに隠す（閉じるとホットキーで出せなくなる）
+        event.preventDefault();
+        invoke('hide_visor');
+        return;
+      }
+      // Cmd+W などでメイン画面を閉じる前に、保留中のオートセーブを確定させる。
+      // 開いていたファイルは、次に開いたメイン画面やバイザーが引き継ぐ
+      const baton = await releaseBaton();
+      await invoke('release_baton', { baton }).catch(() => {});
     });
     return () => {
       unlisten.then((f) => f());
     };
-  }, [flushPendingSave]);
+  }, [visor, releaseBaton]);
 
+  // バイザーが出ているあいだにメイン画面を触ったら（別のディスプレイなど）、バイザーを隠して
+  // バトンを戻す。そうしないと、古い内容のメイン画面で書いたものが保存されない
   useEffect(() => {
-    if (!loaded || !settings) return;
+    if (visor) return;
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) invoke('hide_visor').catch(() => {});
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [visor]);
+
+  // バイザーのホットキーを登録する（設定が変わったら登録し直す）。
+  // 登録は Rust 側に残るので、メイン画面を閉じてもホットキーは効き続ける。
+  const visorShortcut = settings?.visorShortcut ?? DEFAULT_VISOR_SHORTCUT;
+  useEffect(() => {
+    if (!loaded || visor) return;
+    invoke('set_visor_shortcut', { shortcut: visorShortcut }).catch((err) =>
+      console.error('Failed to register visor shortcut:', err),
+    );
+  }, [loaded, visor, visorShortcut]);
+
+  // 照合（reconcile）はファイルを書き換えることがあるので、メイン画面だけで行う
+  useEffect(() => {
+    if (!loaded || !settings || visor) return;
     initDatabase(settings.baseDir)
       .then(() => reconcile(settings.baseDir))
       .catch((err) => console.error('Failed to init DB:', err));
-  }, [loaded, settings]);
+  }, [loaded, settings, visor]);
 
   if (!loaded || !settings) return null;
 
@@ -329,6 +436,7 @@ function App() {
             onMemosChange={updateMemos}
             editorViewRef={editorViewRef}
             containerRef={editorContainerRef}
+            initialCaretRef={pendingCaretRef}
           />
         </div>
         <SideMemoLayer

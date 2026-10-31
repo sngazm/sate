@@ -38,6 +38,34 @@ src-tauri/              # Rust バックエンド
   tauri.conf.json       # Tauri設定
 ```
 
+## メイン画面とバイザー（画面が2つ同時に動く）
+
+バイザー（ホットキーで画面に重なるエディタ、`spec/visor.md`）は、メイン画面と同じ `App` を別のウィンドウ（ラベル `visor`）で動かしている。
+両方が同じファイルを開くので、次を守る。
+
+- **vault（ユーザーの .md）への書き込みは `src/lib/vaultWrite.ts` を通す。** 書いてよいのはバトン（書き込み役）を持っている画面だけで、
+  持っていない画面が書くと古い内容でもう一方の編集を上書きする（2026-06 のデータ消失と同じ形）。
+  `@tauri-apps/plugin-fs` の書き込み系を直接 import すると eslint（`no-restricted-imports`）でエラーになる。
+  例外は `eslint.config.js` に理由付きで列挙している（照合 `reconcile.ts` はメイン画面だけが起動時に行う、など）
+- **起動時や定期的に副作用のある処理は、2つの画面で動くことを前提に `visor` で分ける。** いまメイン画面だけで行うもの:
+  照合（reconcile）、起動時の DB 初期化、ホットキーの登録、環境設定（`App.tsx` の `visor` を参照）
+- **Rust からのイベントは `getCurrentWebviewWindow().listen` で受ける。** `@tauri-apps/api/event` の `listen` は、
+  ほかのウィンドウ宛て（`emit_to`）のイベントまで受けてしまう
+- 画面のあいだで引き継ぐのはファイルの中身とキャレット位置だけ。取り消し履歴・Rewind・検索・スクロール位置は画面ごとに別
+
+### 実機確認（隔離ビルド）
+
+`npm run tauri dev` はインストール版と同じ identifier なので、同じ `sate.db` と vault を共有してしまう。実機確認は識別子を変えた
+「Sate Dev」で行う（設定・DB は `~/Library/Application Support/club.image.sate.dev/` に分かれる。
+そこの `settings.json` の `baseDir` をテスト用フォルダに向ける）。
+
+```bash
+pnpm tauri build --debug --bundles app --config '{"identifier":"club.image.sate.dev","productName":"Sate Dev"}'
+open "src-tauri/target/debug/bundle/macos/Sate Dev.app"
+```
+
+バイザーのホットキーは本物の Sate とぶつかるので、どちらか一方だけ起動する。
+
 ## Tauri v2 重要事項
 
 ### ドキュメント
