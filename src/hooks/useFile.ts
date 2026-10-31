@@ -181,6 +181,14 @@ export function useFile(dirPath: string) {
     [saveFile]
   );
 
+  // 保留中のオートセーブがあれば今すぐ確定させる（ウィンドウを閉じる直前など）。
+  // オートセーブは入力が止まって 1.5 秒後なので、これをしないと直前の入力が消える。
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimerRef.current) {
+      await saveFile();
+    }
+  }, [saveFile]);
+
   const openFile = useCallback(
     async (name: string) => {
       // 保留中のオートセーブがあれば、切り替える前に「今のファイル」へ確定させる。
@@ -376,6 +384,7 @@ export function useFile(dirPath: string) {
     updatePrivate,
     openFile,
     saveFile,
+    flushPendingSave,
     initFile,
     deleteCurrentFile,
     restoreSnapshot,

@@ -19,6 +19,7 @@ import { reconcile } from './lib/reconcile';
 import { parseFrontMatter, type Memo } from './lib/frontmatter';
 import { diffLinesRich, cleanMarkdownForDisplay, type RichDiffLine } from './lib/diff';
 import { Selection } from '@milkdown/prose/state';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import './App.css';
 
 // 1ステップ進める/戻すために必要なホイール累積量。trackpad の小刻みなイベントを
@@ -40,6 +41,7 @@ function App() {
     updateMemos,
     updatePrivate,
     saveFile,
+    flushPendingSave,
     openFile,
     initFile,
     deleteCurrentFile,
@@ -293,6 +295,16 @@ function App() {
     exitRewind();
     setFindRequest(null);
   }, [fileName, exitRewind]);
+
+  // Cmd+W などでウィンドウを閉じる前に、保留中のオートセーブを確定させる
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onCloseRequested(async () => {
+      await flushPendingSave();
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [flushPendingSave]);
 
   useEffect(() => {
     if (!loaded || !settings) return;

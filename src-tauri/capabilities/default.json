@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:menu:default",
+    "core:window:allow-destroy",
     "fs:default",
     "fs:allow-read",
     "fs:allow-write",
