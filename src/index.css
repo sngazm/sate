@@ -1,6 +1,7 @@
 :root {
   --bg: #1a1a18;
-  --text: #d4d0c8;
+  --text-rgb: 212 208 200; /* バイザーの演出で濃さを変えるために、色を成分でも持つ */
+  --text: rgb(var(--text-rgb));
   --text-muted: #6b6860;
   --accent: #8a8478;
 
@@ -27,6 +28,32 @@ html, body {
 #root {
   width: 100%;
   height: 100%;
+}
+
+/* バイザー（src/lib/visorTransition.ts）。背後の画面を透かし、出入りに合わせて下地と本文を濃くする */
+html.visor {
+  background: transparent;
+}
+
+html.visor body {
+  background: color-mix(in srgb, var(--bg) calc(var(--visor-fill, 0) * 100%), transparent);
+}
+
+html.visor .app {
+  background: transparent;
+  opacity: var(--visor-content, 0);
+}
+
+/* 本文とタイトルは、ぼけた影とくっきりした文字を入れ替えて、ピントが合うように出す */
+html.visor .editor-wrapper {
+  --text: rgb(var(--text-rgb) / var(--visor-sharp, 1));
+  color: var(--text);
+  text-shadow: var(--visor-text-shadow, none);
+}
+
+html.visor .app [contenteditable],
+html.visor .app input {
+  caret-color: var(--visor-caret, var(--text));
 }
 
 /* Hide scrollbar but keep functionality */

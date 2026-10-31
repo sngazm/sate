@@ -24,6 +24,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
 import { DEFAULT_VISOR_SHORTCUT } from './lib/shortcut';
 import { caretOf, restoreCaret, type Baton, type Caret } from './lib/baton';
+import { playVisorTransition } from './lib/visorTransition';
 import './App.css';
 
 // 1ステップ進める/戻すために必要なホイール累積量。trackpad の小刻みなイベントを
@@ -315,6 +316,8 @@ function App({ visor = false }: AppProps) {
   // 保存してよいのはバトンを持っている画面だけ。手放す側は保存を確定させてからファイル名と
   // キャレット位置を渡し、受け取る側はファイルを読み直してキャレットを置き直す。
   const pendingCaretRef = useRef<Caret | null>(null);
+  // バイザーが最後に受け取ったキャレット位置（前に出たときに置き直す。下のフォーカスを戻す処理を参照）
+  const batonCaretRef = useRef<Caret | null>(null);
 
   const releaseBaton = useCallback(async (): Promise<Baton> => {
     const view = editorViewRef.current;
@@ -331,6 +334,7 @@ function App({ visor = false }: AppProps) {
     }
     const caret = caretOf(baton);
     pendingCaretRef.current = caret;
+    batonCaretRef.current = caret;
     // 読み直したときは、作り直したエディタがマウント時に pendingCaretRef を使う
     if (await acquireFile(baton.file)) return;
     pendingCaretRef.current = null;
@@ -416,6 +420,66 @@ function App({ visor = false }: AppProps) {
     });
     return () => {
       unlisten.then((f) => f());
+    };
+  }, [visor]);
+
+  // バイザーが前に出ると、WebKit がフォーカスを先頭の入力欄（タイトル）へ移してしまう（メイン画面の refocusRef と同じ）。
+  // さらに、キー入力を受け取れるようになる前に本文へフォーカスしていると、受け取れるようになった時点で
+  // キャレットが先頭へ戻される。そこでホットキーで出たときは、キー入力を受け取れるようになってから、
+  // 隠れる前にフォーカスがあった所（はじめは本文）へ戻し、本文ならキャレットも受け取った位置へ置き直す。
+  // クリックで受け取れるようになったときは、クリックした所を優先して何もしない
+  useEffect(() => {
+    if (!visor) return;
+    let last: HTMLElement | null = null;
+    let restorePending = false;
+    const restore = () => {
+      restorePending = false;
+      const view = editorViewRef.current;
+      if (last && last.isConnected && !(view && view.dom.contains(last))) {
+        last.focus();
+        return;
+      }
+      if (!view || view.isDestroyed) return;
+      if (batonCaretRef.current) restoreCaret(view, batonCaretRef.current);
+      view.focus();
+    };
+    const onBlur = () => {
+      const el = document.activeElement;
+      // どこにもフォーカスが無かった（body）なら、戻すときは本文へ
+      last = el instanceof HTMLElement && el !== document.body ? el : null;
+    };
+    const onFocus = () => {
+      if (restorePending) restore();
+    };
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    const unlistenEnter = getCurrentWebviewWindow().listen('visor-enter', () => {
+      restorePending = true;
+      // すでにキー入力を受け取れるようになっていれば、focus は来ない
+      if (document.hasFocus()) restore();
+    });
+    return () => {
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
+      unlistenEnter.then((f) => f());
+    };
+  }, [visor]);
+
+  // バイザーの出入りの演出。消える演出が最後まで流れたら、パネルを画面から外してもらう
+  useEffect(() => {
+    if (!visor) return;
+    const win = getCurrentWebviewWindow();
+    const unlistenEnter = win.listen('visor-enter', () => {
+      playVisorTransition(true);
+    });
+    const unlistenExit = win.listen<number>('visor-exit', ({ payload: seq }) => {
+      playVisorTransition(false).then((done) => {
+        if (done) invoke('visor_exit_done', { seq }).catch(() => {});
+      });
+    });
+    return () => {
+      unlistenEnter.then((f) => f());
+      unlistenExit.then((f) => f());
     };
   }, [visor]);
 

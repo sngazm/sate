@@ -23,6 +23,7 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = "2.1"
 tauri-plugin-global-shortcut = "~2.3"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAnimation", "NSAnimationContext", "NSApplication", "NSPanel", "NSResponder", "NSWindow"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSPanel", "NSResponder", "NSRunningApplication", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSNotification", "NSOperation", "NSString"] }
 block2 = "0.6"

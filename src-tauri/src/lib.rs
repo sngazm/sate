@@ -103,6 +103,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             visor::baton_ready,
             #[cfg(target_os = "macos")]
+            visor::visor_exit_done,
+            #[cfg(target_os = "macos")]
+            visor::set_visor_blur,
+            #[cfg(target_os = "macos")]
             main_window::hide_main_window
         ])
         .on_window_event(|window, event| {
