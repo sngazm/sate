@@ -20,6 +20,11 @@ import { parseFrontMatter, type Memo } from './lib/frontmatter';
 import { diffLinesRich, cleanMarkdownForDisplay, type RichDiffLine } from './lib/diff';
 import { Selection } from '@milkdown/prose/state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { invoke } from '@tauri-apps/api/core';
+import { DEFAULT_HOTKEY } from './lib/shortcut';
+import { caretOf, restoreCaret, type Caret } from './lib/caret';
+import { playDiveTransition } from './lib/diveTransition';
 import './App.css';
 
 // 1ステップ進める/戻すために必要なホイール累積量。trackpad の小刻みなイベントを
@@ -68,6 +73,8 @@ function App() {
   fileIdRef.current = fileId;
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  // スクロールするのは .app（App.css の overflow-y: auto）
+  const appRef = useRef<HTMLDivElement>(null);
   const memosRef = useRef<Memo[]>(memos);
   memosRef.current = memos;
   const editorViewRef = useRef<import('@milkdown/prose/view').EditorView | null>(null);
@@ -239,6 +246,7 @@ function App() {
     return () => window.removeEventListener('wheel', handleWheel);
   }, [enterRewind, stepRewind, showShortcuts, showSettings, showFileOpen]);
 
+  const escToClose = settings?.escToClose ?? false;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Rewind モード中はキーバインドを横取り（編集はさせない）
@@ -278,17 +286,22 @@ function App() {
         stepSearch(editorViewRef.current, e.shiftKey ? -1 : 1);
       }
       if (e.metaKey && e.key === '/') { e.preventDefault(); setShowShortcuts((v) => !v); }
+      // Cmd+W で隠す。枠の無いパネルは、メニューの「閉じる」（performClose）では閉じられない
+      if (e.metaKey && e.key.toLowerCase() === 'w') { e.preventDefault(); invoke('hide_dive'); }
       if (e.metaKey && e.key === ',') { e.preventDefault(); setShowSettings((v) => !v); }
       if (e.key === 'Escape') {
         if (showSettings) { e.preventDefault(); setShowSettings(false); }
         else if (showShortcuts) { e.preventDefault(); setShowShortcuts(false); }
         else if (showFileOpen) { e.preventDefault(); setShowFileOpen(false); }
         else if (findRequest) { e.preventDefault(); setFindRequest(null); }
+        // 環境設定でオンなら Esc でも隠す。IME の変換を取り消す Esc は除く。WebKit は compositionend を
+        // 先に投げるので、その Esc の isComposing は false になっている。IME が処理したキーは keyCode が 229
+        else if (escToClose && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); invoke('hide_dive'); }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
+  }, [escToClose, showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
 
   // ファイルが切り替わったら（新規含め）Rewind と文書内検索は強制終了
   useEffect(() => {
@@ -296,15 +309,95 @@ function App() {
     setFindRequest(null);
   }, [fileName, exitRewind]);
 
-  // Cmd+W などでウィンドウを閉じる前に、保留中のオートセーブを確定させる
+  // ---- Sate の画面（Dive）の出し入れ（src-tauri/src/dive.rs） ----
+  // 隠すときは保留中の保存を確定させ、フォーカス・キャレット・スクロール位置を覚えておく。
+  // 出たときは、WebKit がフォーカスを先頭の入力欄（タイトル）へ移して一番上までスクロールしてしまう。そこで隠しているあいだは
+  // 中身を inert（フォーカスできない）にしておき、移す先を無くす。出たらすぐ inert を外す。
+  // キー入力を受け取れるようになる前に本文へフォーカスすると、受け取れるようになった時点でキャレットが先頭へ戻されるので、
+  // 受け取れるようになってから、隠す前にフォーカスがあった所（はじめは本文）へスクロールさせずに戻し、キャレットも置き直す。
+  // スクロールで戻すのはだめ（出した直後に WebKit がスクロール先を描かず、真っ白になる）。
+  // クリックで受け取れるようになったときは、クリックした所を優先する
+  const flushPendingSaveRef = useRef(flushPendingSave);
   useEffect(() => {
-    const unlisten = getCurrentWindow().onCloseRequested(async () => {
-      await flushPendingSave();
+    flushPendingSaveRef.current = flushPendingSave;
+  }, [flushPendingSave]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    let last: HTMLElement | null = null;
+    let caret: Caret | null = null;
+    let scrollTop: number | null = null;
+    let restorePending = false;
+    const restore = () => {
+      restorePending = false;
+      const view = editorViewRef.current;
+      if (last && last.isConnected && !(view && view.dom.contains(last))) {
+        last.focus({ preventScroll: true });
+      } else if (view && !view.isDestroyed) {
+        // ProseMirror の focus はスクロールしない。キャレットもスクロールさせずに置き直す
+        view.focus();
+        if (caret) restoreCaret(view, caret, { scroll: false });
+      }
+      // 念のため。ふつうは隠す前の位置のまま
+      if (scrollTop !== null && appRef.current && appRef.current.scrollTop !== scrollTop) {
+        appRef.current.scrollTop = scrollTop;
+      }
+    };
+    const onFocus = () => {
+      if (restorePending) restore();
+    };
+    window.addEventListener('focus', onFocus);
+    // emit_to で送られたイベントだけを受けるため、ウィンドウの listen を使う
+    const win = getCurrentWebviewWindow();
+    const unlistenEnter = win.listen<number>('dive-enter', ({ payload: seq }) => {
+      if (appRef.current) appRef.current.inert = false;
+      playDiveTransition(true);
+      // 2 回目の requestAnimationFrame の時点で 1 コマは描けている。それまでパネルは透明（dive.rs の dive_ready）
+      requestAnimationFrame(() => requestAnimationFrame(() => invoke('dive_ready', { seq }).catch(() => {})));
+      restorePending = true;
+      // すでにキー入力を受け取れるようになっていれば、focus は来ない
+      if (document.hasFocus()) restore();
+    });
+    const unlistenExit = win.listen<number>('dive-exit', ({ payload: seq }) => {
+      const el = document.activeElement;
+      // どこにもフォーカスが無かった（body）なら、戻すときは本文へ
+      last = el instanceof HTMLElement && el !== document.body ? el : null;
+      const view = editorViewRef.current;
+      caret = view && !view.isDestroyed ? caretOf(view) : null;
+      scrollTop = appRef.current?.scrollTop ?? null;
+      if (appRef.current) appRef.current.inert = true;
+      flushPendingSaveRef.current();
+      // 消える演出が最後まで流れたら、パネルを画面から外してもらう
+      playDiveTransition(false).then((done) => {
+        if (done) invoke('dive_exit_done', { seq }).catch(() => {});
+      });
+    });
+    // 聞けるようになったら知らせる。起動時はそこで初めて出る
+    Promise.all([unlistenEnter, unlistenExit]).then(() => invoke('dive_attach').catch(() => {}));
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      unlistenEnter.then((f) => f());
+      unlistenExit.then((f) => f());
+    };
+  }, [loaded]);
+
+  // ウィンドウを閉じる操作でも、閉じずに隠す（閉じるとホットキーや Dock で出せなくなる）
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onCloseRequested((event) => {
+      event.preventDefault();
+      invoke('hide_dive');
     });
     return () => {
       unlisten.then((f) => f());
     };
-  }, [flushPendingSave]);
+  }, []);
+
+  // Sate を開閉するホットキーを登録する（設定が変わったら登録し直す）。オフなら外す（src/lib/shortcut.ts）
+  const hotkey = settings?.hotkeyEnabled ? (settings.hotkey ?? DEFAULT_HOTKEY) : null;
+  useEffect(() => {
+    if (!loaded) return;
+    invoke('set_hotkey', { hotkey }).catch((err) => console.error('Failed to register hotkey:', err));
+  }, [loaded, hotkey]);
 
   useEffect(() => {
     if (!loaded || !settings) return;
@@ -316,7 +409,7 @@ function App() {
   if (!loaded || !settings) return null;
 
   return (
-    <div className="app" onClick={handleClick} onMouseDown={handleMouseDown}>
+    <div className="app" ref={appRef} onClick={handleClick} onMouseDown={handleMouseDown}>
       <div className="editor-container" ref={editorContainerRef}>
         <div className="editor-wrapper">
           <TitleInput key={`title-${fileName}-${reloadKey}`} value={title} onChange={updateTitle} editorViewRef={editorViewRef} />

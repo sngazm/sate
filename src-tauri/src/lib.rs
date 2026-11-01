@@ -1,5 +1,9 @@
 use std::process::Command;
+#[cfg(not(target_os = "macos"))]
 use tauri::Manager;
+
+#[cfg(target_os = "macos")]
+mod dive;
 
 /// ユーザーが設定した公開コマンドを実行する。
 ///
@@ -75,20 +79,60 @@ async fn run_publish_command(
     .map_err(|e| format!("コマンド実行スレッドの異常終了: {e}"))?
 }
 
+/// ログイン時に起動したときに付ける引数（環境設定の「ログイン時に起動する」。tauri-plugin-autostart が登録する）
+const LAUNCHED_AT_LOGIN_ARG: &str = "--launched-at-login";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![LAUNCHED_AT_LOGIN_ARG]),
+        ))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sql::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![run_publish_command, reveal_in_finder])
+        .plugin(tauri_plugin_sql::Builder::default().build());
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .plugin(tauri_nspanel::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    builder
+        .invoke_handler(tauri::generate_handler![
+            run_publish_command,
+            reveal_in_finder,
+            #[cfg(target_os = "macos")]
+            dive::hide_dive,
+            #[cfg(target_os = "macos")]
+            dive::set_hotkey,
+            #[cfg(target_os = "macos")]
+            dive::dive_attach,
+            #[cfg(target_os = "macos")]
+            dive::dive_ready,
+            #[cfg(target_os = "macos")]
+            dive::dive_exit_done,
+            #[cfg(target_os = "macos")]
+            dive::set_dive_blur
+        ])
         .setup(|app| {
-            // Get the main window and set fullscreen
+            // Sate の画面は隠れた状態で作られる。macOS では Dive として、起動・ホットキー・Dock・Cmd+Tab で出す（dive.rs）。
+            // ログイン時に起動したときは出さずに待つ
+            #[cfg(target_os = "macos")]
+            dive::setup(app.handle(), !std::env::args().any(|arg| arg == LAUNCHED_AT_LOGIN_ARG))?;
+            #[cfg(not(target_os = "macos"))]
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_fullscreen(true);
+                window.show()?;
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                // Dock のクリック（Sate がすでに前面のときも来る）
+                dive::show(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

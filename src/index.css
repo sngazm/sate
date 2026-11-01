@@ -1,6 +1,7 @@
 :root {
   --bg: #1a1a18;
-  --text: #d4d0c8;
+  --text-rgb: 212 208 200; /* 出入りの演出で濃さを変えるために、色を成分でも持つ */
+  --text: rgb(var(--text-rgb));
   --text-muted: #6b6860;
   --accent: #8a8478;
 
@@ -27,6 +28,32 @@ html, body {
 #root {
   width: 100%;
   height: 100%;
+}
+
+/* Sate の画面（Dive。src/lib/diveTransition.ts）。背後の画面を透かし、出入りに合わせて下地と本文を濃くする */
+html.dive {
+  background: transparent;
+}
+
+html.dive body {
+  background: color-mix(in srgb, var(--bg) calc(var(--dive-fill, 0) * 100%), transparent);
+}
+
+html.dive .app {
+  background: transparent;
+  opacity: var(--dive-content, 0);
+}
+
+/* 本文とタイトルは、ぼけた影とくっきりした文字を入れ替えて、ピントが合うように出す */
+html.dive .editor-wrapper {
+  --text: rgb(var(--text-rgb) / var(--dive-sharp, 1));
+  color: var(--text);
+  text-shadow: var(--dive-text-shadow, none);
+}
+
+html.dive .app [contenteditable],
+html.dive .app input {
+  caret-color: var(--dive-caret, var(--text));
 }
 
 /* Hide scrollbar but keep functionality */
