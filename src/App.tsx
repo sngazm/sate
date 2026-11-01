@@ -73,6 +73,8 @@ function App() {
   fileIdRef.current = fileId;
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  // スクロールするのは .app（App.css の overflow-y: auto）
+  const appRef = useRef<HTMLDivElement>(null);
   const memosRef = useRef<Memo[]>(memos);
   memosRef.current = memos;
   const editorViewRef = useRef<import('@milkdown/prose/view').EditorView | null>(null);
@@ -308,11 +310,13 @@ function App() {
   }, [fileName, exitRewind]);
 
   // ---- Sate の画面（Dive）の出し入れ（src-tauri/src/dive.rs） ----
-  // 隠すときは保留中の保存を確定させ、フォーカスとキャレットを覚えておく。
-  // 出たときは WebKit がフォーカスを先頭の入力欄（タイトル）へ移してしまい、さらにキー入力を受け取れるように
-  // なる前に本文へフォーカスしていると、受け取れるようになった時点でキャレットが先頭へ戻される。
-  // そこでキー入力を受け取れるようになってから、隠す前にフォーカスがあった所（はじめは本文）へ戻し、
-  // 本文ならキャレットも隠す前の位置へ置き直す。クリックで受け取れるようになったときは、クリックした所を優先する
+  // 隠すときは保留中の保存を確定させ、フォーカス・キャレット・スクロール位置を覚えておく。
+  // 出たときは、WebKit がフォーカスを先頭の入力欄（タイトル）へ移して一番上までスクロールしてしまう。そこで隠しているあいだは
+  // 中身を inert（フォーカスできない）にしておき、移す先を無くす。出たらすぐ inert を外す。
+  // キー入力を受け取れるようになる前に本文へフォーカスすると、受け取れるようになった時点でキャレットが先頭へ戻されるので、
+  // 受け取れるようになってから、隠す前にフォーカスがあった所（はじめは本文）へスクロールさせずに戻し、キャレットも置き直す。
+  // スクロールで戻すのはだめ（出した直後に WebKit がスクロール先を描かず、真っ白になる）。
+  // クリックで受け取れるようになったときは、クリックした所を優先する
   const flushPendingSaveRef = useRef(flushPendingSave);
   useEffect(() => {
     flushPendingSaveRef.current = flushPendingSave;
@@ -322,17 +326,22 @@ function App() {
     if (!loaded) return;
     let last: HTMLElement | null = null;
     let caret: Caret | null = null;
+    let scrollTop: number | null = null;
     let restorePending = false;
     const restore = () => {
       restorePending = false;
       const view = editorViewRef.current;
       if (last && last.isConnected && !(view && view.dom.contains(last))) {
-        last.focus();
-        return;
+        last.focus({ preventScroll: true });
+      } else if (view && !view.isDestroyed) {
+        // ProseMirror の focus はスクロールしない。キャレットもスクロールさせずに置き直す
+        view.focus();
+        if (caret) restoreCaret(view, caret, { scroll: false });
       }
-      if (!view || view.isDestroyed) return;
-      if (caret) restoreCaret(view, caret);
-      view.focus();
+      // 念のため。ふつうは隠す前の位置のまま
+      if (scrollTop !== null && appRef.current && appRef.current.scrollTop !== scrollTop) {
+        appRef.current.scrollTop = scrollTop;
+      }
     };
     const onFocus = () => {
       if (restorePending) restore();
@@ -341,6 +350,7 @@ function App() {
     // emit_to で送られたイベントだけを受けるため、ウィンドウの listen を使う
     const win = getCurrentWebviewWindow();
     const unlistenEnter = win.listen<number>('dive-enter', ({ payload: seq }) => {
+      if (appRef.current) appRef.current.inert = false;
       playDiveTransition(true);
       // 2 回目の requestAnimationFrame の時点で 1 コマは描けている。それまでパネルは透明（dive.rs の dive_ready）
       requestAnimationFrame(() => requestAnimationFrame(() => invoke('dive_ready', { seq }).catch(() => {})));
@@ -354,6 +364,8 @@ function App() {
       last = el instanceof HTMLElement && el !== document.body ? el : null;
       const view = editorViewRef.current;
       caret = view && !view.isDestroyed ? caretOf(view) : null;
+      scrollTop = appRef.current?.scrollTop ?? null;
+      if (appRef.current) appRef.current.inert = true;
       flushPendingSaveRef.current();
       // 消える演出が最後まで流れたら、パネルを画面から外してもらう
       playDiveTransition(false).then((done) => {
@@ -397,7 +409,7 @@ function App() {
   if (!loaded || !settings) return null;
 
   return (
-    <div className="app" onClick={handleClick} onMouseDown={handleMouseDown}>
+    <div className="app" ref={appRef} onClick={handleClick} onMouseDown={handleMouseDown}>
       <div className="editor-container" ref={editorContainerRef}>
         <div className="editor-wrapper">
           <TitleInput key={`title-${fileName}-${reloadKey}`} value={title} onChange={updateTitle} editorViewRef={editorViewRef} />

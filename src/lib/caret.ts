@@ -11,10 +11,11 @@ export function caretOf(view: EditorView): Caret {
   return { anchor: view.state.selection.anchor, head: view.state.selection.head };
 }
 
-/** キャレットを置き直す。文書が変わっていても落ちないよう、範囲内の近い位置に寄せる */
-export function restoreCaret(view: EditorView, { anchor, head }: Caret) {
+/** キャレットを置き直す。文書が変わっていても落ちないよう、範囲内の近い位置に寄せる。`scroll` が false ならスクロールしない */
+export function restoreCaret(view: EditorView, { anchor, head }: Caret, { scroll = true } = {}) {
   const { doc } = view.state;
   const clamp = (pos: number) => Math.max(0, Math.min(pos, doc.content.size));
   const selection = TextSelection.between(doc.resolve(clamp(anchor)), doc.resolve(clamp(head)));
-  view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
+  const tr = view.state.tr.setSelection(selection);
+  view.dispatch(scroll ? tr.scrollIntoView() : tr);
 }
