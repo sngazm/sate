@@ -244,6 +244,7 @@ function App() {
     return () => window.removeEventListener('wheel', handleWheel);
   }, [enterRewind, stepRewind, showShortcuts, showSettings, showFileOpen]);
 
+  const escToClose = settings?.escToClose ?? false;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Rewind モード中はキーバインドを横取り（編集はさせない）
@@ -291,14 +292,14 @@ function App() {
         else if (showShortcuts) { e.preventDefault(); setShowShortcuts(false); }
         else if (showFileOpen) { e.preventDefault(); setShowFileOpen(false); }
         else if (findRequest) { e.preventDefault(); setFindRequest(null); }
-        // Esc で隠す。IME の変換を取り消す Esc は除く。WebKit は compositionend を
+        // 環境設定でオンなら Esc でも隠す。IME の変換を取り消す Esc は除く。WebKit は compositionend を
         // 先に投げるので、その Esc の isComposing は false になっている。IME が処理したキーは keyCode が 229
-        else if (!e.isComposing && e.keyCode !== 229) { e.preventDefault(); invoke('hide_dive'); }
+        else if (escToClose && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); invoke('hide_dive'); }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
+  }, [escToClose, showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
 
   // ファイルが切り替わったら（新規含め）Rewind と文書内検索は強制終了
   useEffect(() => {

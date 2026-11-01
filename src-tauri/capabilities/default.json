@@ -26,6 +26,7 @@
     "fs:scope-appconfig-recursive",
     "fs:scope-document",
     "fs:scope-document-recursive",
+    "autostart:default",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-message",

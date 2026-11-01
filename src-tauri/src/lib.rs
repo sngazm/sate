@@ -79,9 +79,16 @@ async fn run_publish_command(
     .map_err(|e| format!("コマンド実行スレッドの異常終了: {e}"))?
 }
 
+/// ログイン時に起動したときに付ける引数（環境設定の「ログイン時に起動する」。tauri-plugin-autostart が登録する）
+const LAUNCHED_AT_LOGIN_ARG: &str = "--launched-at-login";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![LAUNCHED_AT_LOGIN_ARG]),
+        ))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_sql::Builder::default().build());
@@ -107,9 +114,10 @@ pub fn run() {
             dive::set_dive_blur
         ])
         .setup(|app| {
-            // Sate の画面は隠れた状態で作られる。macOS では Dive として、起動・ホットキー・Dock・Cmd+Tab で出す（dive.rs）
+            // Sate の画面は隠れた状態で作られる。macOS では Dive として、起動・ホットキー・Dock・Cmd+Tab で出す（dive.rs）。
+            // ログイン時に起動したときは出さずに待つ
             #[cfg(target_os = "macos")]
-            dive::setup(app.handle())?;
+            dive::setup(app.handle(), !std::env::args().any(|arg| arg == LAUNCHED_AT_LOGIN_ARG))?;
             #[cfg(not(target_os = "macos"))]
             if let Some(window) = app.get_webview_window("main") {
                 window.show()?;

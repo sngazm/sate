@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 import type { Settings } from '../hooks/useSettings';
 import { DEFAULT_HOTKEY } from '../lib/shortcut';
 import ShortcutRecorder from './ShortcutRecorder';
@@ -24,6 +25,22 @@ export default function SettingsDialog({
   const savedHotkey = settings.hotkey ?? DEFAULT_HOTKEY;
   const [hotkeyEnabled, setHotkeyEnabled] = useState(savedEnabled);
   const [hotkey, setHotkey] = useState(savedHotkey);
+  const savedEscToClose = settings.escToClose ?? false;
+  const [escToClose, setEscToClose] = useState(savedEscToClose);
+  // ログイン時に起動するかは settings.json ではなく macOS 側の登録（~/Library/LaunchAgents）を正とする。
+  // 開くたびにそこから読み、保存したときに変わっていれば登録し直す
+  const [savedLaunchAtLogin, setSavedLaunchAtLogin] = useState(false);
+  const [launchAtLogin, setLaunchAtLogin] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    isAutostartEnabled()
+      .then((enabled) => {
+        setSavedLaunchAtLogin(enabled);
+        setLaunchAtLogin(enabled);
+      })
+      .catch((err) => console.error('Failed to read launch-at-login:', err));
+  }, [visible]);
 
   useEffect(() => {
     if (visible) {
@@ -31,8 +48,9 @@ export default function SettingsDialog({
       setPublishCommand(settings.publishCommand ?? '');
       setHotkeyEnabled(savedEnabled);
       setHotkey(savedHotkey);
+      setEscToClose(savedEscToClose);
     }
-  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedHotkey]);
+  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedHotkey, savedEscToClose]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -51,7 +69,12 @@ export default function SettingsDialog({
     const trimmed = baseDir.trim();
     if (!trimmed) return;
     const trimmedPublish = publishCommand.trim();
-    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, hotkeyEnabled, hotkey });
+    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, hotkeyEnabled, hotkey, escToClose });
+    if (launchAtLogin !== savedLaunchAtLogin) {
+      (launchAtLogin ? enableAutostart() : disableAutostart()).catch((err) =>
+        console.error('Failed to change launch-at-login:', err),
+      );
+    }
     onClose();
   };
 
@@ -88,7 +111,15 @@ export default function SettingsDialog({
         </div>
 
         <div className="settings-field">
-          <label className="settings-label">ホットキー</label>
+          <label className="settings-label">起動と開閉</label>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={launchAtLogin}
+              onChange={(e) => setLaunchAtLogin(e.target.checked)}
+            />
+            ログイン時に起動する
+          </label>
           <label className="settings-check">
             <input
               type="checkbox"
@@ -104,6 +135,14 @@ export default function SettingsDialog({
             disabled={!hotkeyEnabled}
             onChange={setHotkey}
           />
+          <label className="settings-check settings-check-after-field">
+            <input
+              type="checkbox"
+              checked={escToClose}
+              onChange={(e) => setEscToClose(e.target.checked)}
+            />
+            Esc キーでも閉じる
+          </label>
         </div>
 
         <div className="settings-field">

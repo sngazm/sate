@@ -17,6 +17,7 @@ export interface Settings {
   publishCommand?: string; // 公開時に実行するシェルコマンド。未設定なら公開機能は無効。
   hotkeyEnabled?: boolean; // どのアプリからでもホットキーで Sate を開閉するか。未設定ならオフ（登録しない）。
   hotkey?: string; // そのホットキー（"Alt+Space" 形式）。未設定なら DEFAULT_HOTKEY。
+  escToClose?: boolean; // Esc キーでも Sate を閉じるか。未設定ならオフ。
 }
 
 export function useSettings() {
@@ -41,6 +42,7 @@ export function useSettings() {
               publishCommand: parsed.publishCommand,
               hotkeyEnabled: parsed.hotkeyEnabled,
               hotkey: parsed.hotkey,
+              escToClose: parsed.escToClose,
             });
           }
         }

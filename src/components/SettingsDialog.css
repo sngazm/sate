@@ -132,6 +132,12 @@
   cursor: pointer;
 }
 
+/* キー欄など、入力欄のすぐ下に続くチェックボックス */
+.settings-check-after-field {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
 .settings-check input {
   margin: 0;
   accent-color: var(--accent);

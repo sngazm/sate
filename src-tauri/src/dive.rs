@@ -85,14 +85,14 @@ struct DiveState {
 }
 
 /// パネルを作る。メインスレッドで呼ぶこと。ホットキーは `set_hotkey` で登録する。
-pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+/// `show_at_launch` が false（ログイン時に起動したとき）なら、起動しても出さずに待つ。
+pub fn setup(app: &AppHandle, show_at_launch: bool) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Mutex::new(DiveState {
         shown: false,
         seq: 0,
         previous_app: other_front_app(),
         attached: false,
-        // 起動したら出す
-        show_when_attached: true,
+        show_when_attached: show_at_launch,
         hide_app_after_exit: false,
     }));
 

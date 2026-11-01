@@ -41,7 +41,7 @@ src-tauri/              # Rust バックエンド
 ## Sate の画面（Dive）
 
 Sate の画面は一つだけで、ふだんは隠れている。起動・ホットキー・Dock・`Cmd+Tab` で画面全体に重ねて出し、
-`Esc`・`Cmd+W`・ほかのアプリへの切り替えで隠す（`spec/dive.md`、`src-tauri/src/dive.rs`）。
+`Cmd+W`・ほかのアプリへの切り替え（環境設定でオンなら `Esc` も）で隠す（`spec/dive.md`、`src-tauri/src/dive.rs`）。
 コードの中ではこの画面を「Dive」と呼ぶが、画面や環境設定には出さない（利用者には「Sate の画面」）。
 
 - **vault（ユーザーの .md）への書き込みは `src/lib/vaultWrite.ts` を通す。** 書き換える場所を一か所に集めておく
