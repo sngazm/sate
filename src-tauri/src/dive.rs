@@ -207,7 +207,9 @@ pub fn show(app: &AppHandle) {
             return;
         };
         let window: &objc2_app_kit::NSWindow = panel.as_panel();
-        cover_cursor_screen(&handle);
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            cover_cursor_screen(window, mtm);
+        }
         window.setIgnoresMouseEvents(false);
         // 隠れているあいだ（ほかのアプリを使っているときなど）WebKit は描くのを止めていて、出した最初の 1 コマが
         // 灰色になる。画面の JS が 1 コマ描いたと知らせてくる（dive_ready）まで透明にしておく
@@ -344,20 +346,26 @@ pub fn set_dive_blur(app: AppHandle, radius: i32) {
 }
 
 /// マウスカーソルのある画面全体を覆うように配置する
-fn cover_cursor_screen(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(LABEL) else {
-        return;
+///
+/// Tauri の `cursor_position` と `monitor_from_point` は組み合わせて使えない。macOS ではカーソル位置をメインディスプレイの倍率を
+/// 掛けた画素で返すのに、`monitor_from_point` はそれをポイントの座標として画面の枠と比べるので、Retina では
+/// カーソルのないディスプレイやメインディスプレイに出てしまう（tao 0.34.8 / 0.37.2 で確認）。
+/// カーソル位置も画面の枠も AppKit の座標（ポイント単位、メインディスプレイの左下が原点）で取り、パネルの枠をそのまま合わせる。
+fn cover_cursor_screen(window: &objc2_app_kit::NSWindow, mtm: objc2::MainThreadMarker) {
+    let mouse = objc2_app_kit::NSEvent::mouseLocation();
+    let screens = objc2_app_kit::NSScreen::screens(mtm);
+    let frames: Vec<objc2_foundation::NSRect> = (0..screens.count()).map(|i| screens.objectAtIndex(i).frame()).collect();
+    // 左右は左端を含み、上下は上端を含む（AppKit の座標は y が上向きで、カーソルが画面の一番上の行にあると y は枠の上端と同じ値になる）
+    let contains = |f: &&objc2_foundation::NSRect| {
+        mouse.x >= f.origin.x
+            && mouse.x < f.origin.x + f.size.width
+            && mouse.y > f.origin.y
+            && mouse.y <= f.origin.y + f.size.height
     };
-    let monitor = app
-        .cursor_position()
-        .ok()
-        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
-        .or_else(|| app.primary_monitor().ok().flatten());
-    let Some(monitor) = monitor else {
-        return;
-    };
-    let _ = window.set_size(*monitor.size());
-    let _ = window.set_position(*monitor.position());
+    // 見つからなければ最初の画面（メニューバーのある画面）
+    if let Some(frame) = frames.iter().find(contains).or(frames.first()) {
+        window.setFrame_display(*frame, true);
+    }
 }
 
 /// 隠す（`Esc`、`Cmd+W`）
