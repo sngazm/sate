@@ -5,12 +5,13 @@
  * - Return 2 回: 改段落。直前の強制改行を取り除いて段落を分ける
  * - Shift+Return: すぐに改段落
  * - 段落先頭での Backspace: 前の段落とつないで強制改行にする（Return 2 回の逆）
+ * - Ctrl+A / Ctrl+E: 段落の頭・末尾ではなく、強制改行で区切られた行の頭・末尾へ
  *
  * 画面上は段落の間に空行 1 つぶんの余白を置く（App.css）ので、
  * 見た目は「改行 = 1 行」「改段落 = 空行を挟む」というプレーンテキストと同じになる。
  * コピー・貼り付けのプレーンテキストも同じ対応で変換する。
  *
- * リスト・見出し・コードブロックの中では Milkdown 標準の挙動のまま。
+ * リスト・見出し・コードブロックの中では Milkdown 標準の挙動のまま（Ctrl+A / Ctrl+E はどこでも行単位）。
  */
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state';
 import type { EditorState, Transaction } from '@milkdown/prose/state';
@@ -43,6 +44,37 @@ function handleEnter(state: EditorState, dispatch: (tr: Transaction) => void): b
   }
 
   dispatch(state.tr.replaceSelectionWith(hardbreak.create()).scrollIntoView());
+  return true;
+}
+
+/**
+ * Ctrl+A / Ctrl+E。ProseMirror 標準（macBaseKeymap）は textblock の頭・末尾へ飛ぶが、
+ * プレーンテキストと同じく改行（強制改行、コードブロックなら \n）で区切られた行の頭・末尾へ動かす。
+ * 折り返しは行の区切りにしない（プレーンテキストのエディタと同じ）
+ */
+function moveToLineSide(state: EditorState, dispatch: (tr: Transaction) => void, side: -1 | 1): boolean {
+  const { selection } = state;
+  const $pos = side < 0 ? selection.$from : selection.$to;
+  const block = $pos.parent;
+  if (!block.isTextblock) return false;
+
+  const offset = $pos.parentOffset;
+  let from = 0;
+  let to = block.content.size;
+  block.forEach((child, childOffset) => {
+    const breaks: number[] = [];
+    if (child.type.name === 'hardbreak') breaks.push(childOffset);
+    else if (child.isText) {
+      for (let i = child.text!.indexOf('\n'); i !== -1; i = child.text!.indexOf('\n', i + 1)) breaks.push(childOffset + i);
+    }
+    for (const b of breaks) {
+      if (b < offset) from = b + 1;
+      else to = Math.min(to, b);
+    }
+  });
+
+  const target = $pos.start() + (side < 0 ? from : to);
+  dispatch(state.tr.setSelection(TextSelection.create(state.doc, target)).scrollIntoView());
   return true;
 }
 
@@ -111,7 +143,14 @@ export const lineBreakPlugin = $prose(() => {
     key: new PluginKey('line-break'),
     props: {
       handleKeyDown(view, event) {
-        if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return false;
+        if (event.isComposing) return false;
+        if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+          const key = event.key.toLowerCase();
+          if (key === 'a') return moveToLineSide(view.state, view.dispatch, -1);
+          if (key === 'e') return moveToLineSide(view.state, view.dispatch, 1);
+          return false;
+        }
+        if (event.metaKey || event.ctrlKey || event.altKey) return false;
         if (event.key === 'Enter') {
           if (event.shiftKey) {
             if (!inPlainParagraph(view.state.selection.$from)) return false;
