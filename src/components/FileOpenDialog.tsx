@@ -134,6 +134,8 @@ export default function FileOpenDialog({ visible, dirPath, onOpen, onClose }: Fi
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        // App の Esc（環境設定でオンなら Sate ごと隠す）に渡さない。閉じた直後に App のキー処理が「何も開いていない」と見て隠してしまう
+        e.stopPropagation();
         onClose();
       }
     },
