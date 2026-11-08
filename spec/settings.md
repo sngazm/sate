@@ -9,12 +9,18 @@
   "publishCommand": "~/my-site/publish.sh",     // 公開コマンド（省略時は公開機能無効）
   "hotkeyEnabled": true,                        // どのアプリからでもホットキーで Sate を開閉するか（省略時はオフ = 登録しない）
   "hotkey": "Alt+Space",                        // そのホットキー（省略時は Alt+Space）
-  "escToClose": true                            // Esc キーでも Sate を閉じるか（省略時はオフ）
+  "escToClose": true,                           // Esc キーでも Sate を閉じるか（省略時はオフ）
+  "privateLock": true,                          // Private な文章を開くときに PIN を求めるか（省略時はオフ。PIN が無いときもオフ扱い）
+  "privatePin": { "salt": "…", "hash": "…" },    // その PIN（ソルト付きの PBKDF2-SHA256。PIN そのものは置かない）
+  "privateBiometrics": true                     // 生体認証（Touch ID）が使えるなら使うか（省略時はオン）
 }
 ```
 
 環境設定の「起動と開閉」の欄には、上から「ログイン時に起動する」「ホットキーで Sate を開閉する」（とキーの欄）
 「Esc キーでも閉じる」を並べる。どれも初期値はオフ。
+
+「公開コマンド」の上の「Private」の欄には、Private の説明、「Private な文章を開くときに PIN コードを要求する」、PIN の欄と「確定」、
+「生体認証が可能な場合は使用する」を並べる（[private.md](private.md)）。
 
 ## ログイン時に起動する
 

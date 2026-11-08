@@ -26,6 +26,8 @@ interface EditorComponentProps {
   onMemosChange: (memos: Memo[]) => void;
   editorViewRef: React.MutableRefObject<import('@milkdown/prose/view').EditorView | null>;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  /** 作ったときに本文へフォーカスするか（Private な文章をロックして開いたときはしない。App.tsx） */
+  autoFocus?: boolean;
 }
 
 // 改行・改段落と箇条書きの操作（Enter、Tab / Shift+Tab 等での階層変更）の前後で
@@ -152,7 +154,7 @@ const selectionHighlightPlugin = $prose(() => {
   });
 });
 
-function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef, containerRef }: Omit<EditorComponentProps, 'memos' | 'onMemosChange'>) {
+function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef, containerRef, autoFocus = true }: Omit<EditorComponentProps, 'memos' | 'onMemosChange'>) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -211,10 +213,10 @@ function MilkdownEditor({ onChange, initialContent = '', memosRef, editorViewRef
       editorViewRef.current = view;
       if (!didInitialFocusRef.current && view && !view.isDestroyed) {
         didInitialFocusRef.current = true;
-        view.focus();
+        if (autoFocus) view.focus();
       }
     } catch { /* not ready */ }
-  }, [loading, getInstance, editorViewRef]);
+  }, [loading, getInstance, editorViewRef, autoFocus]);
 
   return <Milkdown />;
 }
@@ -277,11 +279,11 @@ function MemoSync({ memos, onMemosChange }: { memos: Memo[]; onMemosChange: (mem
   return null;
 }
 
-export default function EditorComponent({ onChange, initialContent, memosRef, memos, onMemosChange, editorViewRef, containerRef }: EditorComponentProps) {
+export default function EditorComponent({ onChange, initialContent, memosRef, memos, onMemosChange, editorViewRef, containerRef, autoFocus }: EditorComponentProps) {
   return (
     <MilkdownProvider>
       <ProsemirrorAdapterProvider>
-        <MilkdownEditor onChange={onChange} initialContent={initialContent} memosRef={memosRef} editorViewRef={editorViewRef} containerRef={containerRef} />
+        <MilkdownEditor onChange={onChange} initialContent={initialContent} memosRef={memosRef} editorViewRef={editorViewRef} containerRef={containerRef} autoFocus={autoFocus} />
         <MemoSync memos={memos} onMemosChange={onMemosChange} />
       </ProsemirrorAdapterProvider>
     </MilkdownProvider>

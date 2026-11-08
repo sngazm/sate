@@ -3,6 +3,8 @@ use std::process::Command;
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
+mod biometric;
+#[cfg(target_os = "macos")]
 mod dive;
 
 /// ユーザーが設定した公開コマンドを実行する。
@@ -95,7 +97,8 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder
         .plugin(tauri_nspanel::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(biometric::BiometricState::default());
     builder
         .invoke_handler(tauri::generate_handler![
             run_publish_command,
@@ -111,7 +114,13 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             dive::dive_exit_done,
             #[cfg(target_os = "macos")]
-            dive::set_dive_blur
+            dive::set_dive_blur,
+            #[cfg(target_os = "macos")]
+            biometric::biometric_available,
+            #[cfg(target_os = "macos")]
+            biometric::biometric_unlock,
+            #[cfg(target_os = "macos")]
+            biometric::biometric_cancel
         ])
         .setup(|app| {
             // Sate の画面は隠れた状態で作られる。macOS では Dive として、起動・ホットキー・Dock・Cmd+Tab で出す（dive.rs）。

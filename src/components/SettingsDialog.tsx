@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
+import { invoke } from '@tauri-apps/api/core';
 import type { Settings } from '../hooks/useSettings';
 import { DEFAULT_HOTKEY } from '../lib/shortcut';
+import { hashPin, isValidPin, PIN_LENGTH, PIN_SET_MARK, sanitizePinInput } from '../lib/pin';
 import ShortcutRecorder from './ShortcutRecorder';
 import './SettingsDialog.css';
 
@@ -31,6 +33,15 @@ export default function SettingsDialog({
   // 開くたびにそこから読み、保存したときに変わっていれば登録し直す
   const [savedLaunchAtLogin, setSavedLaunchAtLogin] = useState(false);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
+  // Private な文章の PIN。PIN は「確定」（または「保存」）で決まる。ロックアウトを防ぐため、今の PIN を知らなくても変えられる
+  const savedPrivateLock = settings.privateLock ?? false;
+  const savedPrivateBiometrics = settings.privateBiometrics ?? true;
+  const [privateLock, setPrivateLock] = useState(savedPrivateLock);
+  const [privateBiometrics, setPrivateBiometrics] = useState(savedPrivateBiometrics);
+  const [pinInput, setPinInput] = useState('');
+  const [pinMessage, setPinMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState(true);
+  const hasPin = !!settings.privatePin;
 
   useEffect(() => {
     if (!visible) return;
@@ -40,6 +51,9 @@ export default function SettingsDialog({
         setLaunchAtLogin(enabled);
       })
       .catch((err) => console.error('Failed to read launch-at-login:', err));
+    invoke<boolean>('biometric_available')
+      .then(setBiometricAvailable)
+      .catch(() => setBiometricAvailable(false));
   }, [visible]);
 
   useEffect(() => {
@@ -49,8 +63,12 @@ export default function SettingsDialog({
       setHotkeyEnabled(savedEnabled);
       setHotkey(savedHotkey);
       setEscToClose(savedEscToClose);
+      setPrivateLock(savedPrivateLock);
+      setPrivateBiometrics(savedPrivateBiometrics);
+      setPinInput('');
+      setPinMessage(null);
     }
-  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedHotkey, savedEscToClose]);
+  }, [visible, settings.baseDir, settings.publishCommand, savedEnabled, savedHotkey, savedEscToClose, savedPrivateLock, savedPrivateBiometrics]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -65,11 +83,50 @@ export default function SettingsDialog({
 
   if (!visible) return null;
 
-  const handleSave = () => {
+  /** 入力欄の PIN をハッシュにする。正しくなければ知らせて null */
+  const takePinInput = async () => {
+    if (!isValidPin(pinInput)) {
+      setPinMessage({ text: `PIN は ${PIN_LENGTH} 桁の数字にしてください`, error: true });
+      return null;
+    }
+    return hashPin(pinInput);
+  };
+
+  // 「確定」はその場で PIN だけを保存する（ほかの欄は「保存」まで決めない）。
+  // 欄が空に戻って丸が並ぶ（placeholder）ので、設定できたことは言葉で言わない
+  const handleConfirmPin = async () => {
+    const privatePin = await takePinInput();
+    if (!privatePin) return;
+    onSave({ ...settings, privatePin });
+    setPinInput('');
+    setPinMessage(null);
+  };
+
+  const handleSave = async () => {
     const trimmed = baseDir.trim();
     if (!trimmed) return;
+    // 「確定」を押さずに「保存」したときも、入力欄の PIN を使う
+    let privatePin = settings.privatePin;
+    if (privateLock && pinInput) {
+      privatePin = await takePinInput() ?? undefined;
+      if (!privatePin) return;
+    }
+    if (privateLock && !privatePin) {
+      setPinMessage({ text: 'PIN を決めてください', error: true });
+      return;
+    }
     const trimmedPublish = publishCommand.trim();
-    onSave({ ...settings, baseDir: trimmed, publishCommand: trimmedPublish || undefined, hotkeyEnabled, hotkey, escToClose });
+    onSave({
+      ...settings,
+      baseDir: trimmed,
+      publishCommand: trimmedPublish || undefined,
+      hotkeyEnabled,
+      hotkey,
+      escToClose,
+      privateLock,
+      privatePin,
+      privateBiometrics,
+    });
     if (launchAtLogin !== savedLaunchAtLogin) {
       (launchAtLogin ? enableAutostart() : disableAutostart()).catch((err) =>
         console.error('Failed to change launch-at-login:', err),
@@ -81,6 +138,8 @@ export default function SettingsDialog({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      // App の Esc（環境設定でオンなら Sate ごと隠す）に渡さない。閉じた直後に App のキー処理が「何も開いていない」と見て隠してしまう
+      e.stopPropagation();
       onClose();
     }
   };
@@ -143,6 +202,67 @@ export default function SettingsDialog({
             />
             Esc キーでも閉じる
           </label>
+        </div>
+
+        <div className="settings-field">
+          <label className="settings-label">Private</label>
+          <div className="settings-hint settings-hint-lead">
+            文章の右上から Private をオンにすると、文章一覧で書き出しが現れず、検索にもヒットしなくなります。
+          </div>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={privateLock}
+              onChange={(e) => setPrivateLock(e.target.checked)}
+            />
+            Private な文章を開くときに PIN コードを要求する
+          </label>
+          <div className="settings-pin-row">
+            <input
+              type="password"
+              className="settings-input settings-pin"
+              value={pinInput}
+              maxLength={PIN_LENGTH}
+              inputMode="numeric"
+              onChange={(e) => {
+                setPinInput(sanitizePinInput(e.target.value));
+                setPinMessage(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  handleConfirmPin();
+                }
+              }}
+              // PIN が決まっていれば丸を並べる。決まっていなければ空
+              placeholder={hasPin ? PIN_SET_MARK : ''}
+              disabled={!privateLock}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              className="settings-btn settings-btn-browse"
+              onClick={handleConfirmPin}
+              disabled={!privateLock || !isValidPin(pinInput)}
+            >
+              確定
+            </button>
+          </div>
+          {pinMessage && (
+            <div className={`settings-hint${pinMessage.error ? ' settings-error' : ''}`}>{pinMessage.text}</div>
+          )}
+          <label className={`settings-check settings-check-after-field${privateLock ? '' : ' disabled'}`}>
+            <input
+              type="checkbox"
+              checked={privateBiometrics}
+              disabled={!privateLock}
+              onChange={(e) => setPrivateBiometrics(e.target.checked)}
+            />
+            生体認証が可能な場合は使用する
+          </label>
+          {privateLock && privateBiometrics && !biometricAvailable && (
+            <div className="settings-hint">いまは生体認証を使えないので、PIN で開きます</div>
+          )}
         </div>
 
         <div className="settings-field">

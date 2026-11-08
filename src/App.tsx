@@ -10,6 +10,7 @@ import SideMemoLayer from './components/SideMemoLayer';
 import RewindOverlay from './components/RewindOverlay';
 import Timer from './components/Timer';
 import FindBar, { type FindRequest } from './components/FindBar';
+import LockScreen from './components/LockScreen';
 import { selectionAsQuery, stepSearch } from './components/searchPlugin';
 import { useFile } from './hooks/useFile';
 import { useSettings } from './hooks/useSettings';
@@ -57,6 +58,27 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFileOpen, setShowFileOpen] = useState(false);
   const [findRequest, setFindRequest] = useState<FindRequest | null>(null);
+
+  // ---- Private な文章のロック（spec/private.md） ----
+  // Private な文章は、Sate の画面を出すたびに PIN か生体認証で開けるまで隠しておく。
+  // unlockedFile は、今回画面を出してから見てよいと分かった文章（開けた文章と、ロックの要らない状態で表示していた文章）。
+  // 表示中に Private をオンにした・ロックを有効にした文章はそのまま見せ、隠し終えたら忘れる（dive-exit）
+  const lockEnabled = !!settings?.privateLock && !!settings?.privatePin;
+  const [unlockedFile, setUnlockedFile] = useState<string | null>(null);
+  if (fileName && unlockedFile !== fileName && (!lockEnabled || !isPrivate)) {
+    setUnlockedFile(fileName);
+  }
+  const locked = lockEnabled && isPrivate && !!fileName && unlockedFile !== fileName;
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
+  const lockInputRef = useRef<HTMLInputElement>(null);
+  // Sate の画面が出ているか（dive-enter / dive-exit）。ロック画面は出るたびに生体認証を求める
+  const [diveShown, setDiveShown] = useState(false);
+  const handleUnlock = useCallback(() => {
+    setUnlockedFile(fileName);
+  }, [fileName]);
 
   // ---- Rewind state ----
   const [rewindActive, setRewindActive] = useState(false);
@@ -172,7 +194,8 @@ function App() {
   useEffect(() => {
     if (wasModalOpenRef.current && !anyModalOpen) {
       const view = editorViewRef.current;
-      if (view && !view.isDestroyed) view.focus();
+      if (lockedRef.current) lockInputRef.current?.focus();
+      else if (view && !view.isDestroyed) view.focus();
     }
     wasModalOpenRef.current = anyModalOpen;
   }, [anyModalOpen]);
@@ -187,7 +210,7 @@ function App() {
   }, []);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
-    if (rewindActive) return;
+    if (rewindActive || locked) return;
     if (pressStartedInEditorRef.current) return;
     if (showShortcuts || showSettings) return;
     const target = e.target as HTMLElement;
@@ -204,7 +227,7 @@ function App() {
       : Selection.atEnd(view.state.doc);
     view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
     view.focus();
-  }, [showShortcuts, showSettings, rewindActive]);
+  }, [showShortcuts, showSettings, rewindActive, locked]);
 
   // Cmd を押しながらのホイールで Rewind モードに入る/移動する
   useEffect(() => {
@@ -216,8 +239,8 @@ function App() {
         wheelAccumRef.current = 0;
         return;
       }
-      // モーダルが開いてる時は無視
-      if (showShortcuts || showSettings || showFileOpen) return;
+      // モーダルが開いてる時と、Private な文章をロックしているときは無視
+      if (showShortcuts || showSettings || showFileOpen || lockedRef.current) return;
 
       e.preventDefault();
       // まだ Rewind モードでなければ起動
@@ -272,7 +295,7 @@ function App() {
       if (e.metaKey && e.key === 'o') { e.preventDefault(); setShowFileOpen((v) => !v); }
       if (e.metaKey && e.key === 'f') {
         e.preventDefault();
-        if (!showShortcuts && !showSettings && !showFileOpen) {
+        if (!showShortcuts && !showSettings && !showFileOpen && !lockedRef.current) {
           // エディタで選択中のテキストがあれば検索語にする。
           // 検索欄にいるときに押し直した場合は、エディタに残っている古い選択で
           // 入力中のクエリを上書きしないよう、エディタにフォーカスがあるときだけ見る。
@@ -303,11 +326,21 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [escToClose, showShortcuts, showSettings, showFileOpen, findRequest, saveFile, initFile, content, rewindActive, exitRewind, commitRewind, stepRewind]);
 
-  // ファイルが切り替わったら（新規含め）Rewind と文書内検索は強制終了
+  // ファイルが切り替わったら（新規含め）Rewind と文書内検索は強制終了。Private な文章をロックしたときも
   useEffect(() => {
     exitRewind();
     setFindRequest(null);
-  }, [fileName, exitRewind]);
+  }, [fileName, locked, exitRewind]);
+
+  // ロック画面から開けたら、本文へフォーカスを戻す。キャレットは ProseMirror の state に残っている
+  const wasLockedRef = useRef(false);
+  useEffect(() => {
+    if (wasLockedRef.current && !locked) {
+      const view = editorViewRef.current;
+      if (view && !view.isDestroyed) view.focus();
+    }
+    wasLockedRef.current = locked;
+  }, [locked]);
 
   // ---- Sate の画面（Dive）の出し入れ（src-tauri/src/dive.rs） ----
   // 隠すときは保留中の保存を確定させ、フォーカス・キャレット・スクロール位置を覚えておく。
@@ -331,7 +364,10 @@ function App() {
     const restore = () => {
       restorePending = false;
       const view = editorViewRef.current;
-      if (last && last.isConnected && !(view && view.dom.contains(last))) {
+      if (lockedRef.current) {
+        // Private な文章をロックしているあいだは PIN 欄へ。本文へは開けてから戻す
+        lockInputRef.current?.focus({ preventScroll: true });
+      } else if (last && last.isConnected && !(view && view.dom.contains(last))) {
         last.focus({ preventScroll: true });
       } else if (view && !view.isDestroyed) {
         // ProseMirror の focus はスクロールしない。キャレットもスクロールさせずに置き直す
@@ -351,6 +387,7 @@ function App() {
     const win = getCurrentWebviewWindow();
     const unlistenEnter = win.listen<number>('dive-enter', ({ payload: seq }) => {
       if (appRef.current) appRef.current.inert = false;
+      setDiveShown(true);
       playDiveTransition(true);
       // 2 回目の requestAnimationFrame の時点で 1 コマは描けている。それまでパネルは透明（dive.rs の dive_ready）
       requestAnimationFrame(() => requestAnimationFrame(() => invoke('dive_ready', { seq }).catch(() => {})));
@@ -366,10 +403,14 @@ function App() {
       caret = view && !view.isDestroyed ? caretOf(view) : null;
       scrollTop = appRef.current?.scrollTop ?? null;
       if (appRef.current) appRef.current.inert = true;
+      setDiveShown(false);
       flushPendingSaveRef.current();
-      // 消える演出が最後まで流れたら、パネルを画面から外してもらう
+      // 消える演出が最後まで流れたら、パネルを画面から外してもらう。
+      // 見えなくなったので、Private な文章は次に出したときにロックする（途中で出し直したら、ずっと見えていたのでそのまま）
       playDiveTransition(false).then((done) => {
-        if (done) invoke('dive_exit_done', { seq }).catch(() => {});
+        if (!done) return;
+        setUnlockedFile(null);
+        invoke('dive_exit_done', { seq }).catch(() => {});
       });
     });
     // 聞けるようになったら知らせる。起動時はそこで初めて出る
@@ -409,8 +450,9 @@ function App() {
   if (!loaded || !settings) return null;
 
   return (
-    <div className="app" ref={appRef} onClick={handleClick} onMouseDown={handleMouseDown}>
-      <div className="editor-container" ref={editorContainerRef}>
+    <div className={`app${locked ? ' app-locked' : ''}`} ref={appRef} onClick={handleClick} onMouseDown={handleMouseDown}>
+      {/* ロック中は本文を見えなくしてフォーカスもさせない。作り直さないので、開けたら Undo の履歴もキャレットもそのまま */}
+      <div className="editor-container" ref={editorContainerRef} inert={locked}>
         <div className="editor-wrapper">
           <TitleInput key={`title-${fileName}-${reloadKey}`} value={title} onChange={updateTitle} editorViewRef={editorViewRef} />
           <EditorComponent
@@ -422,6 +464,7 @@ function App() {
             onMemosChange={updateMemos}
             editorViewRef={editorViewRef}
             containerRef={editorContainerRef}
+            autoFocus={!locked}
           />
         </div>
         <SideMemoLayer
@@ -431,7 +474,18 @@ function App() {
           editorViewRef={editorViewRef}
         />
       </div>
-      {fileName && !rewindActive && (
+      {locked && settings.privatePin && (
+        <LockScreen
+          // 文章を替えたとき・出し入れしたときは作り直す（打ちかけの PIN を残さない）
+          key={`${fileName}:${diveShown}`}
+          pin={settings.privatePin}
+          biometrics={settings.privateBiometrics ?? true}
+          active={diveShown}
+          inputRef={lockInputRef}
+          onUnlock={handleUnlock}
+        />
+      )}
+      {fileName && !rewindActive && !locked && (
         <FileHeader
           fileName={fileName}
           isPrivate={isPrivate}
@@ -442,7 +496,7 @@ function App() {
           onPublish={publish.publish}
         />
       )}
-      {!rewindActive && <WordCount count={charCount} />}
+      {!rewindActive && !locked && <WordCount count={charCount} />}
       {!rewindActive && <Timer />}
       <FindBar
         request={findRequest}

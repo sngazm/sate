@@ -16,6 +16,9 @@
   padding: 24px 32px;
   min-width: 400px;
   max-width: 500px;
+  /* 欄が増えて、小さい画面では収まらないことがある */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
 
 .settings-title {
@@ -97,6 +100,27 @@
   color: var(--text-muted);
 }
 
+.settings-input:disabled {
+  opacity: 0.5;
+}
+
+/* PIN（数字 4 桁）の欄と「確定」。欄は 4 桁がちょうど収まる幅 */
+.settings-pin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-pin {
+  width: 80px;
+  letter-spacing: 0.4em;
+}
+
+/* 設定済みの丸（placeholder）を、打った丸と同じ並びにする */
+.settings-pin::placeholder {
+  letter-spacing: 0.4em;
+}
+
 .settings-shortcut {
   flex: 1;
   font-family: 'SF Mono', 'Menlo', monospace;
@@ -143,7 +167,13 @@
   accent-color: var(--accent);
 }
 
-.settings-error {
+.settings-check.disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.settings-error,
+.settings-hint.settings-error {
   color: #d97870;
 }
 
@@ -152,6 +182,12 @@
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 6px;
+}
+
+/* 欄の見出しのすぐ下に置く説明 */
+.settings-hint-lead {
+  margin-top: 0;
+  margin-bottom: 10px;
 }
 
 .settings-actions {

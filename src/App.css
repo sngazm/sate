@@ -9,6 +9,16 @@
   cursor: text;
 }
 
+/* Private な文章をロックしているあいだ（LockScreen.tsx）。本文は残したまま見えなくする */
+.app-locked {
+  overflow: hidden;
+  cursor: default;
+}
+
+.app-locked .editor-container {
+  visibility: hidden;
+}
+
 .editor-container {
   width: 100%;
   min-height: 100vh;

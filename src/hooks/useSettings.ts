@@ -7,6 +7,7 @@ import {
   BaseDirectory,
 } from '@tauri-apps/plugin-fs';
 import { homeDir, join } from '@tauri-apps/api/path';
+import type { StoredPin } from '../lib/pin';
 
 // Settings are stored in ~/Library/Application Support/club.image.sate/ (macOS)
 // Tauri's AppConfig BaseDirectory maps to the OS-standard config location.
@@ -18,6 +19,9 @@ export interface Settings {
   hotkeyEnabled?: boolean; // どのアプリからでもホットキーで Sate を開閉するか。未設定ならオフ（登録しない）。
   hotkey?: string; // そのホットキー（"Alt+Space" 形式）。未設定なら DEFAULT_HOTKEY。
   escToClose?: boolean; // Esc キーでも Sate を閉じるか。未設定ならオフ。
+  privateLock?: boolean; // Private な文章を開くときに PIN を求めるか。未設定ならオフ。PIN が無いときもオフ扱い。
+  privatePin?: StoredPin; // その PIN（ソルト付きのハッシュ。src/lib/pin.ts）。
+  privateBiometrics?: boolean; // 生体認証（Touch ID）が使えるなら PIN の代わりに使うか。未設定ならオン。
 }
 
 export function useSettings() {
@@ -43,6 +47,9 @@ export function useSettings() {
               hotkeyEnabled: parsed.hotkeyEnabled,
               hotkey: parsed.hotkey,
               escToClose: parsed.escToClose,
+              privateLock: parsed.privateLock,
+              privatePin: parsed.privatePin,
+              privateBiometrics: parsed.privateBiometrics,
             });
           }
         }

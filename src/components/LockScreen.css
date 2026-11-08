@@ -1,0 +1,101 @@
+/* Private な文章を隠して PIN を待つ画面（LockScreen.tsx）。本文の上に重ね、ダイアログ（z-index 100）よりは下 */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: default;
+  user-select: none;
+}
+
+.lock-screen-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.lock-screen-icon {
+  color: var(--text-muted);
+}
+
+.lock-screen-pin {
+  /* 4 桁がちょうど収まる幅 */
+  width: 96px;
+  padding-left: 0.4em; /* letter-spacing は最後の字の後ろにも付くので、左にも同じだけ空けて真ん中に見せる */
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 18px;
+  letter-spacing: 0.4em;
+  text-align: center;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #3a3a38;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+/* 真ん中寄せの欄ではキャレットが placeholder に重なるので出さない（フォーカスは下線の色で分かる）。
+   出入りの演出のキャレットの指定（index.css の html.dive .app input）より強くする */
+html.dive .app .lock-screen-pin,
+.lock-screen-pin {
+  caret-color: transparent;
+}
+
+.lock-screen-pin:focus {
+  border-bottom-color: var(--accent);
+}
+
+.lock-screen-pin::placeholder {
+  font-family: 'YuGothic', 'Yu Gothic', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.lock-screen-pin.wrong {
+  border-bottom-color: #d97870;
+  animation: lock-screen-shake 300ms ease-out;
+}
+
+@keyframes lock-screen-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+.lock-screen-biometric {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'YuGothic', 'Yu Gothic', sans-serif;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid #3a3a38;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.lock-screen-biometric:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.lock-screen-hint {
+  font-family: 'YuGothic', 'Yu Gothic', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lock-screen-hint.wrong {
+  color: #d97870;
+}

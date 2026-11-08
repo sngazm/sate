@@ -12,7 +12,7 @@
 - [side-memo.md](side-memo.md) — サイドメモ — 操作、保存データ、位置追跡
 - [modes.md](modes.md) — 書くモード / 推敲モード（検討中）
 - [timer.md](timer.md) — タイマー
-- [private.md](private.md) — プライベートファイル
+- [private.md](private.md) — プライベートファイル — 検索・一覧から隠す、開くときの PIN・生体認証
 - [find.md](find.md) — 文書内検索（Cmd+F）
 - [publish.md](publish.md) — 公開コマンド
 - [shortcuts.md](shortcuts.md) — キーボードショートカット一覧
@@ -49,6 +49,7 @@ sate/
 │   │   ├── controlCharFilterPlugin.ts # 制御文字の混入防止（ProseMirrorプラグイン）
 │   │   ├── FileOpenDialog.tsx       # ファイル一覧・検索オーバーレイ
 │   │   ├── FindBar.tsx              # 文書内検索バー（Cmd+F）
+│   │   ├── LockScreen.tsx           # Private な文章のロック画面（PIN・Touch ID）
 │   │   ├── RewindOverlay.tsx        # タイムマシン（Rewind）UI
 │   │   ├── SettingsDialog.tsx       # 環境設定
 │   │   ├── ShortcutHelp.tsx         # ショートカット一覧
@@ -66,6 +67,7 @@ sate/
 │   │   ├── db.ts                    # SQLiteアクセス層・全文検索・スナップショット
 │   │   ├── diff.ts                  # Rewind用の行差分
 │   │   ├── frontmatter.ts           # フロントマターのパース/ビルド
+│   │   ├── pin.ts                   # Private な文章の PIN（ハッシュ・照合）
 │   │   └── reconcile.ts             # ファイルシステム ↔ DB 同期
 │   ├── App.tsx
 │   └── main.tsx
