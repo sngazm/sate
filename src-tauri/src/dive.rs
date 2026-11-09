@@ -146,10 +146,21 @@ fn on_main_thread_later(app: &AppHandle, f: fn(&AppHandle)) {
     });
 }
 
-/// 前面のアプリの pid。Sate なら `None`
+/// Touch ID などの認証のダイアログを出す macOS のアプリ（coreautha）
+const AUTH_AGENT: &str = "com.apple.LocalAuthentication.UIAgent";
+
+/// 前面のアプリの pid。Sate か、認証のダイアログ（coreautha）なら `None`
+///
+/// Private な文章のロック画面が出す Touch ID のダイアログ（biometric.rs）は Sate の画面の上に出て、クリックすると coreautha が
+/// 前面に来る。ほかのアプリに切り替えたのではないので、Sate の一部とみなして隠さない。隠すとダイアログが取り消されて
+/// macOS が前面を Sate に戻し、出し直したロック画面がまたダイアログを出す、を繰り返す（実機で確認済み）
 fn other_front_app() -> Option<i32> {
-    let pid = NSWorkspace::sharedWorkspace().frontmostApplication()?.processIdentifier();
-    (pid != std::process::id() as i32).then_some(pid)
+    let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
+    let pid = app.processIdentifier();
+    if pid == std::process::id() as i32 || app.bundleIdentifier().is_some_and(|id| id.to_string() == AUTH_AGENT) {
+        return None;
+    }
+    Some(pid)
 }
 
 /// ホットキーを登録し直す。`None` なら外す（ホットキーを使わないとき、設定画面でキーを記録している間）。
