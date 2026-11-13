@@ -26,6 +26,9 @@ interface TitleInputProps {
 
 export default function TitleInput({ value, onChange, editorViewRef }: TitleInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  // WebKit では変換確定の Enter の keydown が compositionend の後に届き、isComposing が false になる。
+  // compositionend から少しの間は変換中とみなして、その Enter を拾わないようにする（FindBar と同じ）。
+  const composingRef = useRef(false);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,6 +39,8 @@ export default function TitleInput({ value, onChange, editorViewRef }: TitleInpu
   );
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // IME 変換中のキーは IME に任せる（確定の Enter・候補選択の ↓・取り消しの Esc で本文へ移ったり抜けたりしないように）
+    if (composingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' || e.key === 'ArrowDown') {
       e.preventDefault();
       const editor = document.querySelector('.ProseMirror') as HTMLElement | null;
@@ -88,6 +93,10 @@ export default function TitleInput({ value, onChange, editorViewRef }: TitleInpu
         value={value ?? ''}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onCompositionStart={() => { composingRef.current = true; }}
+        onCompositionEnd={() => {
+          setTimeout(() => { composingRef.current = false; }, 50);
+        }}
         placeholder=""
         spellCheck={false}
         autoComplete="off"
